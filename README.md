@@ -74,8 +74,14 @@ In a browser without a bundler, map the imports:
 
 ## Development
 
+Prism needs Tether beside it (a peer dependency): install both, from GitHub.
+
 ```sh
-npm install      # fetches Tether from GitHub
+npm install github:BrettWhitson/prism#v0.3.2 github:BrettWhitson/tether#v0.3.1
+```
+
+```sh
+npm install      # fetches Tether from GitHub (a dev dependency here)
 npm run demo     # http://localhost:8650/demo/: every option, colour and constant, live
 npm run verify   # lint, prettier, type check, declarations and docs up to date, tests
 npm run types    # regenerate types/ after changing a JSDoc type

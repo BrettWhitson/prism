@@ -3,6 +3,15 @@
 Prism: a graphing and rendering engine (WebGL2). Tether does its layout and physics. Versions follow
 `0.MINOR.PATCH` until the first stable release.
 
+## 0.3.2 (2026-09-30)
+
+- **Tether is a peer dependency** (`>=0.3.1 <0.4.0`): Prism uses the app's own Tether instead of a copy nested
+  inside it, so a Tether fix reaches Prism as soon as the app pins it. Install both:
+  `npm install github:BrettWhitson/prism#v0.3.2 github:BrettWhitson/tether#v0.3.1`. Don't install Prism alone: npm
+  would look for "tether" on the npm registry, where that name belongs to an unrelated package.
+- With Tether 0.3.1, floating graphs respond to small drags again and radial graphs don't spin (see Tether's
+  changelog).
+
 ## 0.3.1 (2026-09-30)
 
 Needs Tether 0.3.0 (for `flowOf`); the dependency is `tether#v0.3.0`.

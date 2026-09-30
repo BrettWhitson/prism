@@ -1,6 +1,6 @@
 {
   "name": "prism",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": true,
   "license": "MIT",
   "description": "Prism: a graphing and rendering engine. Give it nodes and edges; it styles and draws them on the GPU (WebGL2) and handles morphing, hover lineage, selection and export. Layout and physics come from Tether.",
@@ -37,10 +37,8 @@
     "eslint": "^10.0.0",
     "globals": "^17.12.0",
     "prettier": "3.9.9",
-    "typescript": "7.0.2"
-  },
-  "dependencies": {
-    "tether": "github:BrettWhitson/tether#v0.3.0"
+    "typescript": "7.0.2",
+    "tether": "github:BrettWhitson/tether#v0.3.1"
   },
   "types": "./types/index.d.ts",
   "files": [
@@ -50,5 +48,8 @@
     "API.md",
     "LICENSE",
     "CHANGELOG.md"
-  ]
+  ],
+  "peerDependencies": {
+    "tether": ">=0.3.1 <0.4.0"
+  }
 }
