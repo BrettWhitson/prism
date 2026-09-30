@@ -301,9 +301,10 @@ export class GraphView {
     const view = this.#targetView({ fit, anchorNodeId, anchorScreen });
     if (view) graph.moveCamera(view, { animate });
     if (floatIn && this.#physics.floatIn()) this.#drive();
-    // A node still held (a drag through the render) is handed to the new layout; if it went, setGraph let go of it.
+    // A node still held (a drag through the render) is handed to the new layout, which the rest of the graph rests on
+    // from now; if the node went, setGraph let go of it.
     if (this.#heldId != null && this.#nodes.has(this.#heldId))
-      this.#grab(this.#heldId);
+      this.#grab(this.#heldId, { fromLayout: true });
     // The selection survives a render when its node does: so does its lineage.
     if (this.#pinnedNodeId && !this.#nodes.has(this.#pinnedNodeId))
       this.#pinnedNodeId = null;
@@ -392,13 +393,19 @@ export class GraphView {
 
   #positionOf = (id) => this.graph.livePositionOf(id);
 
-  #grab(id) {
+  /** @param {{ fromLayout?: boolean }} [options]  fromLayout: the other nodes start from the layout, not the screen */
+  #grab(id, { fromLayout = false } = {}) {
     this.#heldId = id;
     this.#stopPhysics();
     this.#physics.grab(id, {
       ids: this.graph.nodeIds(),
       links: [...this.#edges.values()],
-      positionOf: this.#positionOf,
+      positionOf: fromLayout
+        ? (nodeId) =>
+            nodeId === id
+              ? this.graph.livePositionOf(nodeId)
+              : this.graph.positionOf(nodeId)
+        : this.#positionOf,
     });
     this.#drive();
   }
