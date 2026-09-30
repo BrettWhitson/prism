@@ -1,6 +1,6 @@
 {
   "name": "prism",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "license": "MIT",
   "description": "Prism: a graphing and rendering engine. Give it nodes and edges; it styles and draws them on the GPU (WebGL2) and handles morphing, hover lineage, selection and export. Layout and physics come from Tether.",
