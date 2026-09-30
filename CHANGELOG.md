@@ -3,9 +3,9 @@
 Prism: a graphing and rendering engine (WebGL2). Tether does its layout and physics. Versions follow
 `0.MINOR.PATCH` until the first stable release.
 
-## Unreleased (branch `perf`)
+## 0.3.1 (2026-09-30)
 
-Needs Tether's unreleased `flowOf` (its branch `perf`).
+Needs Tether 0.3.0 (for `flowOf`); the dependency is `tether#v0.3.0`.
 
 - **Faster restyles with class rules or hooks.** An edge reads its end nodes' resolved styles instead of resolving
   them again. Before, every restyle resolved each node three times.
