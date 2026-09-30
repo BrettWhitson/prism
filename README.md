@@ -80,6 +80,9 @@ Prism needs Tether beside it (a peer dependency): install both, from GitHub.
 npm install github:BrettWhitson/prism#v0.3.2 github:BrettWhitson/tether#v0.3.1
 ```
 
+When upgrading, install Tether first, then Prism: npm checks Prism's peer range against the Tether already
+installed, so upgrading both in one command fails (ERESOLVE) while the old Tether is still there.
+
 ```sh
 npm install      # fetches Tether from GitHub (a dev dependency here)
 npm run demo     # http://localhost:8650/demo/: every option, colour and constant, live
