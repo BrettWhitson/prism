@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Prism demo</title>
+    <link rel="icon" href="data:," />
+    <script type="importmap">
+      { "imports": { "tether/": "../node_modules/tether/src/" } }
+    </script>
+    <style>
+      :root {
+        color-scheme: dark;
+        font:
+          14px/1.4 system-ui,
+          sans-serif;
+      }
+      body {
+        margin: 0;
+        height: 100vh;
+        display: grid;
+        grid-template-rows: auto 1fr;
+        background: #0d1017;
+        color: #e3e6ec;
+      }
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 16px;
+        align-items: center;
+        padding: 8px 16px;
+        border-bottom: 1px solid #2a3242;
+      }
+      label {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      #graph {
+        position: relative;
+        overflow: hidden;
+      }
+      #status {
+        margin-left: auto;
+        color: #8a93a6;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <strong>Prism</strong>
+      <label>
+        Nodes
+        <select id="size">
+          <option>12</option>
+          <option selected>60</option>
+          <option>400</option>
+          <option>3000</option>
+        </select>
+      </label>
+      <label>
+        Direction
+        <select id="direction">
+          <option value="TB">Top → bottom</option>
+          <option value="BT" selected>Bottom → top</option>
+          <option value="LR">Left → right</option>
+          <option value="RL">Right → left</option>
+          <option value="radial">Radial</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="shared" /> Shared nodes</label>
+      <label>
+        Physics
+        <select id="physics">
+          <option value="elastic">Elastic</option>
+          <option value="floating">Floating</option>
+        </select>
+      </label>
+      <button id="regenerate">New graph</button>
+      <button id="fit">Fit</button>
+      <span id="status"></span>
+    </header>
+    <div id="graph"></div>
+    <script type="module" src="./demo.js"></script>
+  </body>
+</html>
