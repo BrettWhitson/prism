@@ -26,6 +26,10 @@ export declare const DEFAULT_COLORS: {
   edgeLabelText: string;
   labelBackdrop: string;
   edgeLabelBackdrop: string;
+  /** Card nodes: the title and the value, the subtitle, the inside of the port dots. */
+  cardText: string;
+  cardMuted: string;
+  portFill: string;
 };
 export { parseColor };
 export { wrapLabel } from "./labels.js";
@@ -116,7 +120,7 @@ export declare class WebGLGraph {
    *           flowSpeed?: number, smoothZoom?: boolean, zoomSpeed?: number, draggable?: boolean,
    *           input?: Partial<typeof DEFAULT_INPUT>,
    *           labels?: Partial<{ position: string, backdrop: boolean, fadeZoom: number, maxWidth: number,
-   *           overflow: string }> }} options
+   *           overflow: string, cardDetailZoom: number }> }} options
    */
   setOptions(options: {
     motion?: {
@@ -136,6 +140,7 @@ export declare class WebGLGraph {
       fadeZoom: number;
       maxWidth: number;
       overflow: string;
+      cardDetailZoom: number;
     }>;
   }): void;
   /** The interaction colours (DEFAULT_COLORS), a copy. */
@@ -146,6 +151,10 @@ export declare class WebGLGraph {
     edgeLabelText: string;
     labelBackdrop: string;
     edgeLabelBackdrop: string;
+    /** Card nodes: the title and the value, the subtitle, the inside of the port dots. */
+    cardText: string;
+    cardMuted: string;
+    portFill: string;
   };
   /** Change any interaction colours (selection, hover, label text and backdrops): they apply at once. */
   setColors(patch: any): void;
@@ -159,7 +168,8 @@ export declare class WebGLGraph {
    *
    * @param {{ nodes: { id: string, x: number, y: number, width: number, height: number, style: any }[],
    *           edges: { id: string, source: string, target: string, style: any }[], routing?: string,
-   *           flowAxis?: string, cornerRadius?: number, curvature?: number }} graph
+   *           flowAxis?: string, cornerRadius?: number, curvature?: number,
+   *           portDirection?: { x: number, y: number } }} graph
    * @param {{ animate?: boolean, spawnFrom?: Map<string, {x: number, y: number}>, delays?: Map<string, number>,
    *           ghostTo?: Map<string, {x: number, y: number}> }} [transition]
    */
@@ -183,6 +193,10 @@ export declare class WebGLGraph {
       flowAxis?: string;
       cornerRadius?: number;
       curvature?: number;
+      portDirection?: {
+        x: number;
+        y: number;
+      };
     },
     {
       animate,
@@ -209,8 +223,8 @@ export declare class WebGLGraph {
     },
   ): void;
   /**
-   * Restyle nodes and edges in place (no movement): [{ id, style }]. A node whose `style.size` changed is resized to
-   * it (width and height), where it stands.
+   * Restyle nodes and edges in place (no movement): [{ id, style }]. A node whose size changed (`style.width` and
+   * `style.height`, or `style.size` for both) is resized to it where it stands, on a spring when animations are on.
    */
   updateStyles(nodeUpdates?: any[], edgeUpdates?: any[]): void;
   /**
@@ -245,16 +259,21 @@ export declare class WebGLGraph {
     x: any;
     y: any;
   };
-  /** Change how edges are routed (a style setting) without replacing the graph. */
+  /**
+   * Change how edges are routed (a style setting) without replacing the graph. `portDirection`: a unit vector toward
+   * the root side of the flow, where card nodes put their out port (their in port is opposite); zero for none.
+   */
   setRouting({
     routing,
     flowAxis,
     cornerRadius,
     curvature,
+    portDirection,
   }: {
     cornerRadius: any;
     curvature: any;
     flowAxis: any;
+    portDirection: any;
     routing: any;
   }): void;
   /** Where a node is on screen right now (CSS pixels), or null. */

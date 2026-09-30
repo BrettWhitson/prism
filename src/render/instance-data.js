@@ -20,12 +20,13 @@ import { cachedColor } from "./color.js";
  * the current ones. They gain bookkeeping fields (slot, pieceAt, …) from here.
  */
 
-export const NODE_FLOATS = 36;
+export const NODE_FLOATS = 56;
 export const EDGE_FLOATS = 16;
 export const ARROW_FLOATS = 9;
 const NODE_PATTERNS = { solid: 0, dashed: 1, dotted: 2, stack: 3 };
 const EDGE_PATTERNS = { dashed: 1, dotted: 2 };
 const NO_ICON = [0, 0, 0, 0];
+const NO_COLOR = [0, 0, 0, 0];
 const ON_TOP = 0.01; // emphasis above this draws an edge over the others
 const HIDDEN = 0.004; // edges fainter than this aren't drawn
 
@@ -399,7 +400,8 @@ function writeNode(d, at, record, iconUv, hidden = false) {
   const mix = colorMixOf(record);
   const from = record.colorFrom;
   const putColor = (key) => {
-    if (mix >= 1 || !from) return put(record[key]);
+    if (!record[key]) return put(NO_COLOR); // a colour this record never had (cards' stripe and ports)
+    if (mix >= 1 || !from?.[key]) return put(record[key]);
     const to = record[key],
       start = from[key];
     for (let i = 0; i < to.length; i++)
@@ -423,6 +425,19 @@ function writeNode(d, at, record, iconUv, hidden = false) {
   d[o++] = hidden ? 0 : Math.max(0, Math.min(1, record.alpha.value));
   d[o++] = Math.max(0.05, record.scale.value);
   d[o++] = style.iconAlpha ?? 1;
+  d[o++] = 0;
+  // Cards: stripe, ports, and their sizes (zeros for icon nodes, which the shader then draws as before).
+  const card = style.look === "card";
+  putColor("stripe");
+  putColor("portIn");
+  putColor("portOut");
+  d[o++] = card ? 1 : 0;
+  d[o++] = card ? (style.iconSize ?? 28) : 0;
+  d[o++] = card ? (style.iconInset ?? 11) : 0;
+  d[o++] = card ? (style.stripeWidth ?? 3) : 0;
+  d[o++] = card ? (style.portSize ?? 8) : 0;
+  d[o++] = card ? (style.stripeInset ?? 7) : 0;
+  d[o++] = 0;
   d[o++] = 0;
 }
 

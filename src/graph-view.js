@@ -55,6 +55,17 @@ import {
  * @property {[{}]} destroy
  */
 
+/** Options that change every node's box: changing one lays the graph out again. */
+const RELAYOUT_OPTIONS = new Set(["nodeLook", "cardWidth", "cardHeight"]);
+
+/** Each flow direction's root side (edges run parent → child, root outward), where a card's out port sits. */
+const ROOT_SIDE = {
+  TB: { x: 0, y: 1 },
+  BT: { x: 0, y: -1 },
+  LR: { x: 1, y: 0 },
+  RL: { x: -1, y: 0 },
+};
+
 /** Handler names (the constructor's `handlers`) → the event they listen to. */
 const HANDLER_EVENTS = {
   onNodeTap: "nodeTap",
@@ -219,6 +230,21 @@ export class GraphView extends Emitter {
     this.#showPinnedLineage({ force: true });
     this.syncBackground();
     this.emit("optionsChange", { changed });
+    // A new node look (or card size) changes every box: lay the graph out again, morphing into it.
+    if (changed.some((key) => RELAYOUT_OPTIONS.has(key)) && this.#nodes.size)
+      this.relayout();
+  }
+
+  /**
+   * Lay the graph on screen out again, morphing into the new layout (for example after changing layout options,
+   * which otherwise apply from the next render()). The view stays where it is.
+   */
+  relayout() {
+    if (!this.#nodes.size) return;
+    this.render({
+      nodes: [...this.#nodes.values()].map(({ data }) => data),
+      edges: [...this.#edges.values()].map(({ data }) => data),
+    });
   }
 
   /** Put options back to their defaults: these keys, or all of them. */
@@ -357,8 +383,8 @@ export class GraphView extends Emitter {
         const start = plan.startOf(id) ?? { x: 0, y: 0 };
         return {
           id,
-          w: style.size,
-          h: style.size,
+          w: style.width,
+          h: style.height,
           ...this.#footprint(style),
           x: start.x,
           y: start.y,
@@ -384,7 +410,13 @@ export class GraphView extends Emitter {
       const position = { x: layoutGraph.x[i], y: layoutGraph.y[i] };
       finalPositions.set(id, position);
       const style = styles.get(id);
-      return { id, ...position, width: style.size, height: style.size, style };
+      return {
+        id,
+        ...position,
+        width: style.width,
+        height: style.height,
+        style,
+      };
     });
     const animate =
       o.animationsEnabled &&
@@ -690,6 +722,7 @@ export class GraphView extends Emitter {
         fadeZoom: o.labelFadeZoom,
         maxWidth: o.labelWidth * o.labelWrapScale,
         overflow: o.labelOverflow,
+        cardDetailZoom: o.cardDetailZoom,
       },
     });
   }
@@ -701,6 +734,9 @@ export class GraphView extends Emitter {
       flowAxis: resolveFlowAxis(o),
       cornerRadius: o.edgeCornerRadius,
       curvature: o.edgeCurvature ?? 1,
+      portDirection: isDirectionalLayout(o)
+        ? (ROOT_SIDE[o.direction] ?? { x: 0, y: 0 })
+        : { x: 0, y: 0 },
     };
   }
 
@@ -709,8 +745,11 @@ export class GraphView extends Emitter {
    * layouts leave this much room.
    */
   #footprint(style) {
-    const size = style.size;
-    if (!style.label) return { fullW: size, fullH: size };
+    const width = style.width,
+      height = style.height;
+    // Cards carry their text inside.
+    if (!style.label || style.look === "card")
+      return { fullW: width, fullH: height };
     const o = this.#options;
     const font = labelFont(style.fontSize, style.bold);
     const wrapWidth = o.labelWidth * o.labelWrapScale;
@@ -729,17 +768,18 @@ export class GraphView extends Emitter {
       if (this.#labelSizes.size > 20000) this.#labelSizes.clear();
       this.#labelSizes.set(key, label);
     }
-    const half = size / 2;
+    const halfW = width / 2,
+      halfH = height / 2;
     const box = labelBox(
       resolveLabelPosition(o),
-      half,
-      half,
+      halfW,
+      halfH,
       label.width,
       label.height,
     );
     return {
-      fullW: Math.max(half, box.x2) - Math.min(-half, box.x1),
-      fullH: Math.max(half, box.y2) - Math.min(-half, box.y1),
+      fullW: Math.max(halfW, box.x2) - Math.min(-halfW, box.x1),
+      fullH: Math.max(halfH, box.y2) - Math.min(-halfH, box.y1),
     };
   }
 
@@ -756,6 +796,9 @@ export class GraphView extends Emitter {
       this.#classStyles,
     );
     style.icon = data.icon ?? null;
+    // Ports only where edges meet the card: in on the leaf side (it has children), out on the root side (a parent).
+    if (!this.#outgoing.get(id)?.length) style.portIn = null;
+    if (!this.#incoming.get(id)?.length) style.portOut = null;
     return style;
   }
 

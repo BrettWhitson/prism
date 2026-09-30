@@ -18,6 +18,11 @@ import {
 
 const $ = (id) => document.getElementById(id);
 const PALETTE = ["#62a4da", "#8fd07a", "#d6a74a", "#c678dd", "#e0645c"];
+const SOURCES = [
+  ["Crafted", "#62a4da"],
+  ["Bought", "#8fd07a"],
+  ["Forge", "#c678dd"],
+];
 
 // ---------------------------------------------------------------- plugins, one of each kind
 
@@ -88,7 +93,15 @@ function makeGraph(count, shared, seed) {
   let state = seed;
   const random = () =>
     ((state = (state * 16807) % 2147483647) - 1) / 2147483646;
-  const nodes = [{ id: "n0", label: "Root", color: PALETTE[0] }];
+  const nodes = [
+    {
+      id: "n0",
+      label: "Root",
+      color: PALETTE[0],
+      subtitle: "The result",
+      tag: "Root",
+    },
+  ];
   const edges = [];
   const depth = [0];
   for (let i = 1; i < count; i++) {
@@ -100,6 +113,19 @@ function makeGraph(count, shared, seed) {
       color: PALETTE[depth[i] % PALETTE.length],
       classes: random() < 0.1 ? ["marked"] : [],
       weight: random(),
+      // Card text (nodeLook: "card"): runs with a square mark, coloured dots, and now and then a tag.
+      subtitle: [
+        `×${1 + Math.floor(random() * 20)} `,
+        { mark: SOURCES[i % SOURCES.length][1] },
+        ` ${SOURCES[i % SOURCES.length][0]}`,
+      ],
+      value: [
+        `${Math.floor(random() * 90)}`,
+        { dot: "#e2b54f" },
+        ` ${Math.floor(random() * 99)}`,
+        { dot: "#b9bec7" },
+      ],
+      tag: random() < 0.12 ? "✓ 2 owned" : "",
     });
     edges.push({
       source: `n${parent}`,

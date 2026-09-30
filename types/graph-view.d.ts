@@ -132,38 +132,6 @@ export type GraphViewEvents = {
   ];
   destroy: [{}];
 };
-/**
- * @typedef {{ id: string, label?: string, color?: string, icon?: string, classes?: string[] | string,
- *             root?: boolean, style?: import('./style.js').NodeRule, [data: string]: any }} GraphNode
- *   style: this node's own style overrides (any NodeStyle field); other fields are yours (the style hooks see them)
- * @typedef {{ id?: string, source: string, target: string, label?: string, sourceColor?: string,
- *             targetColor?: string, classes?: string[] | string, style?: import('./style.js').EdgeRule,
- *             [data: string]: any }} GraphEdge
- * @typedef {{ zoom: number, panX: number, panY: number }} Viewport
- *   the camera: a graph point (x, y) is drawn at (x × zoom + panX, y × zoom + panY) CSS pixels
- */
-/**
- * The events a GraphView emits (view.on(type, listener) returns an unsubscribe function):
- * @typedef {object} GraphViewEvents
- * @property {[{ id: string, originalEvent: PointerEvent }]} nodeTap
- * @property {[{ id: string, originalEvent: PointerEvent }]} nodeDoubleTap
- * @property {[{ id: string, originalEvent: PointerEvent }]} nodeContextTap  right click or long press
- * @property {[{ originalEvent?: PointerEvent }]} backgroundTap
- * @property {[{ id: string, originalEvent: PointerEvent }]} nodeHoverStart
- * @property {[{}]} nodeHoverEnd
- * @property {[{ originalEvent: PointerEvent }]} pointerMove
- * @property {[{ viewport: Viewport }]} viewportChange  pan or zoom (every frame while it moves)
- * @property {[{ id: string }]} dragStart
- * @property {[{ id: string, x: number, y: number }]} drag  the held node moved (graph coordinates)
- * @property {[{ id: string }]} dragEnd
- * @property {[{ reason: string }]} physicsStart  "drag", "shake" or "float-in"
- * @property {[{}]} physicsSettle  the physics went still
- * @property {[{ nodeCount: number, edgeCount: number, layoutMs: number }]} render  after render()
- * @property {[{ id: string | null }]} select
- * @property {[{ changed: string[] }]} optionsChange
- * @property {[{ changed: string[] }]} themeChange
- * @property {[{}]} destroy
- */
 /** Handler names (the constructor's `handlers`) → the event they listen to. */
 declare const HANDLER_EVENTS: {
   onNodeTap: string;
@@ -241,6 +209,11 @@ export declare class GraphView extends Emitter<GraphViewEvents> {
    * @param {Partial<import('./options.js').Options>} patch
    */
   setOptions(patch: Partial<import("./options.js").Options>): void;
+  /**
+   * Lay the graph on screen out again, morphing into the new layout (for example after changing layout options,
+   * which otherwise apply from the next render()). The view stays where it is.
+   */
+  relayout(): void;
   /** Put options back to their defaults: these keys, or all of them. */
   resetOptions(keys: any): void;
   /** The theme in effect (a copy). */

@@ -4,7 +4,9 @@
  *
  * Nodes (one quad per node, back to front): a soft drop shadow, the state glow (hover / selection / highlight), the
  * aura (a standing state), a card peeking out behind (collapsed), a ring just outside the border, the body with
- * its icon and patterned border, and a corner badge.
+ * its icon and patterned border, and a corner badge. Card nodes (cardParams.x = 1) also get a colour stripe down
+ * their left edge, their icon on the left instead of filling the box, and port dots where edges meet them along the
+ * flow; their text is drawn in the label layer.
  *
  * Edges (one quad per straight piece): a capsule of constant on-screen width, optionally dashed or dotted, with an
  * optional soft glow, and "flow": bright pulses travelling along highlighted edges.
@@ -24,6 +26,11 @@ layout(location=7) in vec4 ring;
 layout(location=8) in vec4 iconRect;
 layout(location=9) in vec4 shapeParams;  // border width, shape, pattern, badge
 layout(location=10) in vec4 stateParams; // alpha, scale, icon alpha, -
+layout(location=11) in vec4 stripe;
+layout(location=12) in vec4 portIn;  // on the leaf side of the flow (0 alpha: no port)
+layout(location=13) in vec4 portOut; // on the root side
+layout(location=14) in vec4 cardParams; // card (0 or 1), icon size, icon inset, stripe width
+layout(location=15) in vec4 cardExtra;  // port diameter, stripe inset, -, -
 uniform mat3 view;
 uniform float pxWorld; // world units per device pixel
 out vec2 p;
@@ -36,6 +43,11 @@ out vec4 vRing;
 out vec4 vIcon;
 out vec4 vShape;
 out vec4 vState;
+out vec4 vStripe;
+out vec4 vPortIn;
+out vec4 vPortOut;
+out vec4 vCard;
+out vec4 vCardExtra;
 void main() {
   float scale = stateParams.y;
   // Room around the box for shadow, glow, aura, ring, card and badge, plus anti-aliasing.
@@ -50,6 +62,11 @@ void main() {
   vIcon = iconRect;
   vShape = shapeParams;
   vState = stateParams;
+  vStripe = stripe;
+  vPortIn = portIn;
+  vPortOut = portOut;
+  vCard = cardParams;
+  vCardExtra = cardExtra;
   vec3 clip = view * vec3(center + p * scale, 1.0);
   gl_Position = vec4(clip.xy, 0.0, 1.0);
 }`;
@@ -78,9 +95,16 @@ in vec4 vRing;
 in vec4 vIcon;
 in vec4 vShape;
 in vec4 vState;
+in vec4 vStripe;
+in vec4 vPortIn;
+in vec4 vPortOut;
+in vec4 vCard;
+in vec4 vCardExtra;
 uniform float pxWorld;
 uniform sampler2D icons;
 uniform vec4 badgeRect;
+uniform vec2 portDir;  // unit vector toward the root side of the flow; zero: no ports (radial)
+uniform vec4 portFill; // inside the port dots (premultiplied)
 out vec4 color;
 
 const float PI = 3.14159265;
@@ -156,9 +180,29 @@ void main() {
 
   // Body: fill, icon, then the border band.
   float inside = fill01(d, px);
+  bool card = vCard.x > 0.5;
   if (inside > 0.0) {
     vec4 body = vec4(vFill.rgb * vFill.a, vFill.a);
-    if (vIcon.z > 0.0 && vState.z > 0.0) {
+    if (card) {
+      // Card: the stripe down the left edge, then the icon, square with rounded corners, left of the text.
+      float stripeWidth = vCard.w;
+      if (vStripe.a > 0.001 && stripeWidth > 0.0) {
+        vec2 stripeHalf = vec2(stripeWidth * 0.5, max(h.y - vCardExtra.y, 0.5));
+        float stripeD = roundBox(p - vec2(-h.x + stripeHalf.x, 0.0), stripeHalf, min(1.5, stripeHalf.x));
+        float s = fill01(stripeD, px) * vStripe.a;
+        body = over(vec4(vStripe.rgb * s, s), body);
+      }
+      float iconSize = vCard.y;
+      if (vIcon.z > 0.0 && vState.z > 0.0 && iconSize > 0.0) {
+        vec2 c = vec2(-h.x + vCard.z + iconSize * 0.5, 0.0);
+        vec2 uv = (p - c) / iconSize + 0.5;
+        float mask = fill01(roundBox(p - c, vec2(iconSize * 0.5), min(5.0, iconSize * 0.2)), px);
+        if (mask > 0.0) {
+          vec4 texel = texture(icons, mix(vIcon.xy, vIcon.zw, clamp(uv, 0.0, 1.0))) * vState.z * mask;
+          body = over(texel, body);
+        }
+      }
+    } else if (vIcon.z > 0.0 && vState.z > 0.0) {
       vec2 inner = h - vec2(bw + 2.0);
       vec2 uv = p / max(inner, vec2(0.001)) * 0.5 + 0.5;
       if (all(greaterThanEqual(uv, vec2(0.0))) && all(lessThanEqual(uv, vec2(1.0)))) {
@@ -177,6 +221,22 @@ void main() {
     }
     body = mix(body, vec4(vBorder.rgb, 1.0), onBorder);
     result = over(body * inside, result);
+  }
+
+  // Card ports: dots where the flow's edges meet the card, the out port on the root side, the in port opposite.
+  if (card && vCardExtra.x > 0.0 && dot(portDir, portDir) > 0.5) {
+    vec2 out_ = portDir * dot(abs(portDir), h);
+    float radius = vCardExtra.x * 0.5;
+    for (int k = 0; k < 2; k++) {
+      vec4 portColor = k == 0 ? vPortOut : vPortIn;
+      if (portColor.a < 0.001) continue;
+      float pd = length(p - (k == 0 ? out_ : -out_)) - radius;
+      float disc = fill01(pd, px);
+      if (disc <= 0.0) continue;
+      float ringBand = fill01(-(pd + 1.5), px); // 1 inside the ring's inner edge
+      vec4 dotColor = mix(vec4(portColor.rgb * portColor.a, portColor.a), portFill, ringBand);
+      result = over(dotColor * disc, result);
+    }
   }
 
   // Corner badge, top right, half on the border.

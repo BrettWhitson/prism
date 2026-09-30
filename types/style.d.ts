@@ -13,6 +13,10 @@ export declare const THEME_SCHEMA: Readonly<{
   edgeLabelText: import("tether/schema.js").Field;
   labelBackdrop: import("tether/schema.js").Field;
   edgeLabelBackdrop: import("tether/schema.js").Field;
+  cardBorder: import("tether/schema.js").Field;
+  cardText: import("tether/schema.js").Field;
+  cardMuted: import("tether/schema.js").Field;
+  portFill: import("tether/schema.js").Field;
 }>;
 export type Theme = {
   node: string;
@@ -28,11 +32,16 @@ export type Theme = {
   edgeLabelText: string;
   labelBackdrop: string;
   edgeLabelBackdrop: string;
+  cardBorder: string;
+  cardText: string;
+  cardMuted: string;
+  portFill: string;
 };
 /**
  * @typedef {{ node: string, nodeFill: string, edge: string, ancestors: string, descendants: string,
  *             highlight: string, focus: string, selected: string, hover: string, labelText: string,
- *             edgeLabelText: string, labelBackdrop: string, edgeLabelBackdrop: string }} Theme
+ *             edgeLabelText: string, labelBackdrop: string, edgeLabelBackdrop: string, cardBorder: string,
+ *             cardText: string, cardMuted: string, portFill: string }} Theme
  */
 /** @type {Readonly<Theme>} */
 export declare const DEFAULT_THEME: Readonly<Theme>;
@@ -101,6 +110,55 @@ export type NodeStyle = {
    * the icon's URL (the node's `icon`)
    */
   icon?: string | null;
+  /**
+   * from the nodeLook option; a class rule or hook can change it per node
+   */
+  look: "icon" | "card";
+  /**
+   * the box (graph units): for icons, `size` unless set; for cards, cardWidth
+   */
+  width: number;
+  height: number;
+  /**
+   * cards: the colour stripe down the left edge (default: the node's colour)
+   */
+  stripe: string | null;
+  /**
+   * cards: the port dot on the leaf side of the flow, or null (default: the node's
+   * colour, where the node has children)
+   */
+  portIn: string | null;
+  /**
+   * cards: the port dot on the root side, or null (default: the node's colour, where
+   * the node has a parent)
+   */
+  portOut: string | null;
+  /**
+   * cards: the second line (the node's `subtitle`)
+   */
+  subtitle: import("./render/card-text.js").RichText;
+  /**
+   * cards: the third line (the node's `value`)
+   */
+  value: import("./render/card-text.js").RichText;
+  /**
+   * cards: a pill on the top edge, top right (the node's `tag`)
+   */
+  tag: string;
+  tagColor: string | null;
+  valueColor: string | null;
+  /**
+   * cards: the icon's size, its inset from the left, the stripe and port sizes, and the
+   * subtitle and value font sizes, from the card options
+   */
+  iconSize: number;
+  iconInset: number;
+  stripeWidth: number;
+  stripeInset: number;
+  portSize: number;
+  subtitleSize: number;
+  valueSize: number;
+  cardPadding: number;
 };
 export type EdgeStyle = {
   color: string;
@@ -145,6 +203,25 @@ export declare const NODE_STYLE_SCHEMA: Readonly<{
   labelPriority: import("tether/schema.js").Field;
   events: import("tether/schema.js").Field;
   icon: import("tether/schema.js").Field;
+  look: import("tether/schema.js").Field;
+  width: import("tether/schema.js").Field;
+  height: import("tether/schema.js").Field;
+  stripe: import("tether/schema.js").Field;
+  portIn: import("tether/schema.js").Field;
+  portOut: import("tether/schema.js").Field;
+  subtitle: import("tether/schema.js").Field;
+  value: import("tether/schema.js").Field;
+  tag: import("tether/schema.js").Field;
+  tagColor: import("tether/schema.js").Field;
+  valueColor: import("tether/schema.js").Field;
+  iconSize: import("tether/schema.js").Field;
+  iconInset: import("tether/schema.js").Field;
+  stripeWidth: import("tether/schema.js").Field;
+  stripeInset: import("tether/schema.js").Field;
+  portSize: import("tether/schema.js").Field;
+  subtitleSize: import("tether/schema.js").Field;
+  valueSize: import("tether/schema.js").Field;
+  cardPadding: import("tether/schema.js").Field;
 }>;
 export declare const EDGE_STYLE_SCHEMA: Readonly<{
   color: import("tether/schema.js").Field;

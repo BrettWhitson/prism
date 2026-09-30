@@ -10,6 +10,7 @@ interface. Types for all of it are in `types/` (`Options`, `Theme`, `NodeStyle`,
 - [Options](#options)
 - [Theme](#theme)
 - [Styling](#styling)
+- [Cards](#cards)
 - [Events](#events)
 - [Selection, lineage and highlights](#selection-lineage-and-highlights)
 - [Viewport](#viewport)
@@ -105,6 +106,24 @@ The layout and physics options are Tether's settings: `layout`, `direction`, `la
 | `nodeBorderWidth` | `3` | 0 – 20 | Node border width, in graph units. |
 | `rootBorderBoost` | `1.5` | 0 – 10 | The root's border is this much thicker. |
 | `showIcons` | `true` | true / false | Draw each node's icon (its `icon` URL). |
+
+**Cards**
+
+| Option | Default | Values | What it does |
+| --- | --- | --- | --- |
+| `nodeLook` | `"icon"` | `icon`, `card` | "icon": square nodes with their label beside them. "card": wide cards with the text inside (title, subtitle, value, tag), a colour stripe and port dots. Switching morphs the graph and lays it out again. |
+| `cardWidth` | `222` | 60 – 1000 | Card width, in graph units. |
+| `cardHeight` | `64` | 24 – 400 | Card height, in graph units. |
+| `cardIconSize` | `28` | 0 – 200 | The icon's size on a card (0: no icon). |
+| `cardIconInset` | `11` | 0 – 100 | How far the icon sits from the card's left edge. |
+| `cardPadding` | `10` | 0 – 60 | Space at the card's right edge. |
+| `cardTitleSize` | `12.5` | 4 – 48 | The title's font size. |
+| `cardSubtitleSize` | `11` | 4 – 48 | The subtitle's font size. |
+| `cardValueSize` | `12` | 4 – 48 | The value's font size. |
+| `cardStripeWidth` | `3` | 0 – 20 | The colour stripe down the card's left edge (0: none). |
+| `cardStripeInset` | `7` | 0 – 100 | How far the stripe stops short of the card's top and bottom. |
+| `cardPortSize` | `8` | 0 – 40 | The port dots where the flow's edges meet a card (0: none). |
+| `cardDetailZoom` | `0.55` | 0 – 4 | Below this zoom cards show only their title; below labelFadeZoom, no text at all. |
 
 **Labels**
 
@@ -216,6 +235,10 @@ Colours are checked: `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, `rgb()`, `rgba()`,
 | `edgeLabelText` | `#8a93a6` | Edge labels. |
 | `labelBackdrop` | `rgba(11, 14, 20, 0.8)` | Behind node labels (labelBackdrop). |
 | `edgeLabelBackdrop` | `rgba(13, 16, 23, 0.9)` | Behind edge labels. |
+| `cardBorder` | `#2a3242` | Card outlines (the node's colour goes to its stripe). |
+| `cardText` | `#e3e6ec` | A card's title and value. |
+| `cardMuted` | `#8a93a6` | A card's subtitle. |
+| `portFill` | `#0d1017` | Inside the port dots, and behind a card's tag. |
 
 <!-- /generated:theme -->
 
@@ -269,6 +292,40 @@ unknown fields and unusable values (a malformed colour, an unknown pattern) are 
 source. `null` clears `aura`, `ring`, an edge's `pattern` and its arrowheads, and is ignored elsewhere.
 
 `resolveNodeStyle` and `resolveEdgeStyle` run the pipeline on their own, for tests and tools.
+
+## Cards
+
+`nodeLook: "card"` draws nodes as wide cards with their text inside, instead of square icons with a label beside
+them (`"icon"`, the default). Switching looks morphs every node to its new size and lays the graph out again. A class
+rule or the `nodeStyle` hook can set `look` per node.
+
+A card has a title (the node's `label`), a subtitle, a value and a tag, all from the node's own fields, plus a
+colour stripe down its left edge, its icon on the left, and port dots where the flow's edges meet it:
+
+```js
+view.setOptions({ nodeLook: "card", direction: "LR" });
+view.render({
+  nodes: [
+    {
+      id: "bolt",
+      label: "Bolt",
+      icon: "…",
+      color: "#a335ee", // the stripe and the ports, unless the style says otherwise
+      subtitle: ["×1 ", { mark: "#c678dd" }, " Mystic Forge"],
+      value: ["2,199", { dot: "#e2b54f" }, " 34", { dot: "#b9bec7" }],
+      tag: "✓ 2 owned",
+    },
+  ],
+  edges: [],
+});
+```
+
+`subtitle` and `value` are a string or a list of runs: strings, `{ text, color }`, `{ mark: color }` (a small square)
+and `{ dot: color }` (a small circle). Card style fields: `width`, `height`, `stripe`, `portIn` (the leaf side of the
+flow), `portOut` (the root side), `tagColor`, `valueColor`, and the sizes from the card options. A port is drawn only
+where an edge meets the card (in: it has children; out: it has a parent), and never in radial layouts. Below
+`cardDetailZoom` only titles are drawn, and below `labelFadeZoom` no card text at all, so thousands of cards stay
+fast. The text bitmaps are cached, capped by size.
 
 ## Events
 

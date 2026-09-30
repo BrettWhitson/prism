@@ -1,6 +1,19 @@
 /** @type {Readonly<import('tether/index.js').Schema>} */
 export declare const OPTIONS_SCHEMA: Readonly<import("tether/index.js").Schema>;
 export type Options = import("tether/index.js").LayoutSettings & {
+  nodeLook: "icon" | "card";
+  cardWidth: number;
+  cardHeight: number;
+  cardIconSize: number;
+  cardIconInset: number;
+  cardPadding: number;
+  cardTitleSize: number;
+  cardSubtitleSize: number;
+  cardValueSize: number;
+  cardStripeWidth: number;
+  cardStripeInset: number;
+  cardPortSize: number;
+  cardDetailZoom: number;
   nodeSize: number;
   nodeSizeScale: number;
   rootSizeScale: number;
@@ -83,6 +96,9 @@ export type Options = import("tether/index.js").LayoutSettings & {
 };
 /**
  * @typedef {import('tether/index.js').LayoutSettings & {
+ *   nodeLook: "icon" | "card", cardWidth: number, cardHeight: number, cardIconSize: number, cardIconInset: number,
+ *   cardPadding: number, cardTitleSize: number, cardSubtitleSize: number, cardValueSize: number,
+ *   cardStripeWidth: number, cardStripeInset: number, cardPortSize: number, cardDetailZoom: number,
  *   nodeSize: number, nodeSizeScale: number, rootSizeScale: number, nodeShape: string, tintNodeFill: boolean,
  *   tintFillAlpha: number, nodeBorderWidth: number, rootBorderBoost: number, showIcons: boolean,
  *   showLabels: boolean, fontSize: number, labelFontScale: number, rootFontScale: number,

@@ -15,7 +15,7 @@
  * style }. Either may carry a colour fade: `colorMix` ({ value } 0 → 1) from `colorFrom` (the same colour fields) to
  * the current ones. They gain bookkeeping fields (slot, pieceAt, …) from here.
  */
-export declare const NODE_FLOATS = 36;
+export declare const NODE_FLOATS = 56;
 export declare const EDGE_FLOATS = 16;
 export declare const ARROW_FLOATS = 9;
 /** A growable run of floats: `length` of them used, `data` reused from frame to frame, a dirty span to upload. */

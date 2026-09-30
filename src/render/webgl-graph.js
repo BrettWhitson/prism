@@ -31,6 +31,7 @@ import {
   NODE_VERTEX,
   nodeFragmentSource,
 } from "./shaders.js";
+import { CARD_TAG_ROOM, drawCardText } from "./card-text.js";
 import {
   customShapeGlsl,
   disableShape,
@@ -81,7 +82,14 @@ export const DEFAULT_COLORS = {
   edgeLabelText: "#8a93a6",
   labelBackdrop: "rgba(11, 14, 20, 0.8)",
   edgeLabelBackdrop: "rgba(13, 16, 23, 0.9)",
+  /** Card nodes: the title and the value, the subtitle, the inside of the port dots. */
+  cardText: "#e3e6ec",
+  cardMuted: "#8a93a6",
+  portFill: "#0d1017",
 };
+
+/** Card text bitmaps kept at once, in pixels (about 4 bytes each), least recently used dropped first. */
+const CARD_CACHE_PIXELS = 24_000_000;
 export { parseColor };
 export { wrapLabel } from "./labels.js";
 
@@ -110,6 +118,7 @@ export class WebGLGraph {
     flowAxis: "y",
     cornerRadius: 10,
     curvature: 1,
+    portDirection: { x: 0, y: 0 },
   };
   #labels = {
     position: "right",
@@ -117,6 +126,8 @@ export class WebGLGraph {
     fadeZoom: 0.35,
     maxWidth: 120,
     overflow: "wrap",
+    /** Card nodes: below this zoom only their titles are drawn (below fadeZoom, no text at all). */
+    cardDetailZoom: 0.55,
   };
   #motion = { enabled: true, params: springFor(450), durationMs: 450 };
   #input = {
@@ -267,7 +278,7 @@ export class WebGLGraph {
    *           flowSpeed?: number, smoothZoom?: boolean, zoomSpeed?: number, draggable?: boolean,
    *           input?: Partial<typeof DEFAULT_INPUT>,
    *           labels?: Partial<{ position: string, backdrop: boolean, fadeZoom: number, maxWidth: number,
-   *           overflow: string }> }} options
+   *           overflow: string, cardDetailZoom: number }> }} options
    */
   setOptions(options) {
     if (options.motion) {
@@ -332,7 +343,8 @@ export class WebGLGraph {
    *
    * @param {{ nodes: { id: string, x: number, y: number, width: number, height: number, style: any }[],
    *           edges: { id: string, source: string, target: string, style: any }[], routing?: string,
-   *           flowAxis?: string, cornerRadius?: number, curvature?: number }} graph
+   *           flowAxis?: string, cornerRadius?: number, curvature?: number,
+   *           portDirection?: { x: number, y: number } }} graph
    * @param {{ animate?: boolean, spawnFrom?: Map<string, {x: number, y: number}>, delays?: Map<string, number>,
    *           ghostTo?: Map<string, {x: number, y: number}> }} [transition]
    */
@@ -343,6 +355,7 @@ export class WebGLGraph {
       flowAxis: graph.flowAxis ?? "y",
       cornerRadius: graph.cornerRadius ?? 10,
       curvature: graph.curvature ?? 1,
+      portDirection: graph.portDirection ?? { x: 0, y: 0 },
     };
     const params = this.#motion.params;
     const previous = this.#byId;
@@ -379,10 +392,7 @@ export class WebGLGraph {
         };
       }
       record.ghost = false;
-      record.width = input.width;
-      record.height = input.height;
-      record.hw = input.width / 2;
-      record.hh = input.height / 2;
+      this.#resize(record, input.width, input.height, animate && !isNew);
       this.#applyNodeStyle(record, input.style, { fade: !isNew && animate });
       // The dragged node stays under the pointer.
       if (input.id !== this.#dragged) {
@@ -473,21 +483,22 @@ export class WebGLGraph {
   }
 
   /**
-   * Restyle nodes and edges in place (no movement): [{ id, style }]. A node whose `style.size` changed is resized to
-   * it (width and height), where it stands.
+   * Restyle nodes and edges in place (no movement): [{ id, style }]. A node whose size changed (`style.width` and
+   * `style.height`, or `style.size` for both) is resized to it where it stands, on a spring when animations are on.
    */
   updateStyles(nodeUpdates = [], edgeUpdates = []) {
     for (const { id, style } of nodeUpdates) {
       const record = this.#byId.get(id);
       if (!record) continue;
-      const size = style.size;
-      if (size != null && size !== record.style?.size) {
-        record.width = record.height = Math.max(
-          MIN_NODE_SIZE,
-          finiteOr(size, 0),
+      const width = style.width ?? style.size,
+        height = style.height ?? style.size;
+      if (width != null && height != null)
+        this.#resize(
+          record,
+          Math.max(MIN_NODE_SIZE, finiteOr(width, 0)),
+          Math.max(MIN_NODE_SIZE, finiteOr(height, 0)),
+          this.#motion.enabled,
         );
-        record.hw = record.hh = record.width / 2;
-      }
       this.#applyNodeStyle(record, style, { fade: true });
     }
     for (const { id, style } of edgeUpdates) {
@@ -515,6 +526,33 @@ export class WebGLGraph {
     this.requestRender();
   }
 
+  /**
+   * A node's size: at once, or (`animate`) growing or shrinking to it on springs, from wherever it is now. Everything
+   * that reads a node's box (edges, hits, labels, bounds) follows as it changes.
+   */
+  #resize(record, width, height, animate) {
+    record.width = width;
+    record.height = height;
+    const hw = width / 2,
+      hh = height / 2;
+    if (
+      animate &&
+      record.hw != null &&
+      (record.hw !== hw || record.hh !== hh)
+    ) {
+      const params = this.#motion.params;
+      record.hwSpring ??= new Spring(record.hw, params, 0.05);
+      record.hhSpring ??= new Spring(record.hh, params, 0.05);
+      record.hwSpring.set(hw);
+      record.hhSpring.set(hh);
+      this.#moving.add(record);
+      return;
+    }
+    record.hwSpring = record.hhSpring = null;
+    record.hw = hw;
+    record.hh = hh;
+  }
+
   /** A node's look. `fade`: blend from the colours on screen to the new ones instead of switching. */
   #applyNodeStyle(record, style, { fade = false } = {}) {
     // A colour's own alpha (#rrggbbaa, rgba()…) multiplies the style's.
@@ -527,6 +565,9 @@ export class WebGLGraph {
       border: withAlpha(style.border, 1),
       aura: style.aura ? withAlpha(style.aura, 1) : [0, 0, 0, 0],
       ring: style.ring ? withAlpha(style.ring, 0.9) : [0, 0, 0, 0],
+      stripe: style.stripe ? withAlpha(style.stripe, 1) : [0, 0, 0, 0],
+      portIn: style.portIn ? withAlpha(style.portIn, 1) : [0, 0, 0, 0],
+      portOut: style.portOut ? withAlpha(style.portOut, 1) : [0, 0, 0, 0],
     };
     this.#fadeColors(record, colors, fade);
     record.style = style;
@@ -705,13 +746,17 @@ export class WebGLGraph {
     return record ? { x: record.px.value, y: record.py.value } : null;
   }
 
-  /** Change how edges are routed (a style setting) without replacing the graph. */
-  setRouting({ routing, flowAxis, cornerRadius, curvature }) {
+  /**
+   * Change how edges are routed (a style setting) without replacing the graph. `portDirection`: a unit vector toward
+   * the root side of the flow, where card nodes put their out port (their in port is opposite); zero for none.
+   */
+  setRouting({ routing, flowAxis, cornerRadius, curvature, portDirection }) {
     this.#layout = {
       routing: routing ?? this.#layout.routing,
       flowAxis: flowAxis ?? this.#layout.flowAxis,
       cornerRadius: cornerRadius ?? this.#layout.cornerRadius,
       curvature: curvature ?? this.#layout.curvature,
+      portDirection: portDirection ?? this.#layout.portDirection,
     };
     this.#geometryDirty = true;
     this.requestRender();
@@ -991,6 +1036,11 @@ export class WebGLGraph {
         [8, 4],
         [9, 4],
         [10, 4],
+        [11, 4],
+        [12, 4],
+        [13, 4],
+        [14, 4],
+        [15, 4],
       ]);
       return [vao, buffer];
     };
@@ -1357,7 +1407,15 @@ ${error.message}`,
         this.#touched.add(record);
         let moving;
         if (record.px) {
-          const moved = record.px.step(dt) | record.py.step(dt);
+          let moved = record.px.step(dt) | record.py.step(dt);
+          if (record.hwSpring) {
+            const resizing =
+              record.hwSpring.step(dt) | record.hhSpring.step(dt);
+            record.hw = record.hwSpring.value;
+            record.hh = record.hhSpring.value;
+            if (resizing) moved = 1;
+            else record.hwSpring = record.hhSpring = null;
+          }
           if (moved && !record.ghost) this.#gridMoved.add(record);
           moving = moved | record.scale.step(dt) | record.glow.step(dt);
         } else moving = !!(record.emphasis.step(dt) | 0);
@@ -1521,6 +1579,16 @@ ${error.message}`,
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.iconTexture);
     gl.uniform1i(this.#uniform(this.nodeProgram, "icons"), 0);
+    const { x: portX, y: portY } = this.#layout.portDirection;
+    gl.uniform2f(this.#uniform(this.nodeProgram, "portDir"), portX, portY);
+    const [pr, pg, pb, pa] = parseColorAlpha(this.#colors.portFill);
+    gl.uniform4f(
+      this.#uniform(this.nodeProgram, "portFill"),
+      pr * pa,
+      pg * pa,
+      pb * pa,
+      pa,
+    );
     const badge = this.#badgeUrl && this.#iconSlots.get(this.#badgeUrl);
     if (badge?.uv)
       gl.uniform4f(
@@ -1574,9 +1642,29 @@ ${error.message}`,
               ? 1e6
               : (record.style.labelPriority ?? 0) * 1e5 + record.width;
     const candidates = [];
+    // Card nodes carry their text inside: drawn under the labels, never thinned (it can't collide).
+    const cardOpacity = all ? 1 : this.#labelOpacity(zoom);
+    const detail = all || zoom >= this.#labels.cardDetailZoom;
     for (const index of visible) {
       const record = this.#nodes[index];
-      if (!record?.style.label) continue;
+      if (record?.style.look !== "card") continue;
+      const opacity = cardOpacity * Math.min(1, record.alpha.value * 1.2);
+      if (opacity < 0.02) continue;
+      const s = record.scale.value * zoom;
+      const image = this.#cardImage(record, s * (all ? 1 : this.dpr), detail);
+      const centre = camera.toScreen(record.px.value, record.py.value);
+      const w = record.hw * 2 * s,
+        h = (record.hh * 2 + CARD_TAG_ROOM) * s;
+      const x1 = centre.x - record.hw * s,
+        y1 = centre.y - (record.hh + CARD_TAG_ROOM) * s;
+      if (!all && (x1 > width || x1 + w < 0 || y1 > height || y1 + h < 0))
+        continue;
+      context.globalAlpha = opacity;
+      context.drawImage(image, x1, y1, w, h);
+    }
+    for (const index of visible) {
+      const record = this.#nodes[index];
+      if (!record?.style.label || record.style.look === "card") continue;
       const pinned =
         (record.style.labelPriority ?? 0) > 0 ||
         record.id === this.#hovered ||
@@ -1674,6 +1762,70 @@ ${error.message}`,
     }
     context.globalAlpha = 1;
   }
+
+  /**
+   * A card's text as a bitmap (card-text.js), drawn at `pixelsPerUnit` rounded up to a power of two (between ½ and 4),
+   * so zooming reuses a few sizes. Kept in a least-recently-used cache capped by pixels.
+   */
+  #cardImage(record, pixelsPerUnit, detail) {
+    const style = record.style;
+    const bucket =
+      2 **
+      Math.min(
+        2,
+        Math.max(-1, Math.ceil(Math.log2(Math.max(0.01, pixelsPerUnit)))),
+      );
+    const width = Math.round(record.hw * 2),
+      height = Math.round(record.hh * 2);
+    const colors = this.#colors;
+    const card = {
+      width,
+      height,
+      title: style.label ?? "",
+      subtitle: style.subtitle,
+      value: style.value,
+      tag: style.tag,
+      titleSize: style.fontSize ?? 12.5,
+      subtitleSize: style.subtitleSize ?? 11,
+      valueSize: style.valueSize ?? 12,
+      textLeft:
+        style.icon && (style.iconSize ?? 28) > 0
+          ? (style.iconInset ?? 11) + (style.iconSize ?? 28) + 9
+          : (style.stripeWidth ?? 3) + 10,
+      padding: style.cardPadding ?? 10,
+      text: colors.cardText,
+      muted: colors.cardMuted,
+      valueColor: style.valueColor ?? null,
+      tagColor: style.tagColor ?? null,
+      tagBackground: colors.portFill,
+    };
+    const key = JSON.stringify([card, bucket, detail]);
+    const cache = this.#cardCache;
+    let image = cache.get(key);
+    if (image) {
+      cache.delete(key); // most recently used goes last
+      cache.set(key, image);
+      return image;
+    }
+    image = document.createElement("canvas");
+    image.width = Math.max(1, Math.ceil(width * bucket));
+    image.height = Math.max(1, Math.ceil((height + CARD_TAG_ROOM) * bucket));
+    const context = image.getContext("2d");
+    context.scale(bucket, bucket);
+    drawCardText(context, card, { detail });
+    cache.set(key, image);
+    this.#cardCachePixels += image.width * image.height;
+    for (const [oldKey, old] of cache) {
+      if (this.#cardCachePixels <= CARD_CACHE_PIXELS) break;
+      cache.delete(oldKey);
+      this.#cardCachePixels -= old.width * old.height;
+      old.width = old.height = 0;
+    }
+    return image;
+  }
+
+  #cardCache = new Map();
+  #cardCachePixels = 0;
 
   /**
    * A label drawn once at 2× into its own canvas (with its backdrop pill or text outline), then reused:
