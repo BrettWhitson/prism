@@ -24,7 +24,7 @@ export const NODE_FLOATS = 56;
 export const EDGE_FLOATS = 16;
 export const ARROW_FLOATS = 9;
 const NODE_PATTERNS = { solid: 0, dashed: 1, dotted: 2, stack: 3 };
-const EDGE_PATTERNS = { dashed: 1, dotted: 2 };
+const EDGE_PATTERNS = { dashed: 1, dotted: 2, arrows: 3 };
 const NO_ICON = [0, 0, 0, 0];
 const NO_COLOR = [0, 0, 0, 0];
 const ON_TOP = 0.01; // emphasis above this draws an edge over the others
@@ -315,7 +315,11 @@ export class InstanceData {
     e.alpha = alpha;
     e.width = width;
     e.flow = flow;
-    e.pattern = flow ? 0 : (EDGE_PATTERNS[style.pattern] ?? 0);
+    e.pattern = flow
+      ? 0
+      : style.pattern === "arrows" && style.patternToward === "source"
+        ? 4 // chevrons pointing at the source
+        : (EDGE_PATTERNS[style.pattern] ?? 0);
     e.glow = style.glow ? 1 : emphasis * 0.6;
     e.arrowSize = size;
     e.trimStart = style.arrowAtSource
@@ -458,10 +462,16 @@ function routeOf(edge, layout) {
     ty = target.py.value,
     thw = target.hw * target.scale.value,
     thh = target.hh * target.scale.value;
+  const sourceRim = portRim(source, sx, sy, shw, shh, layout),
+    targetRim = portRim(target, tx, ty, thw, thh, layout);
   const key = edge.routeKey;
   if (
     key &&
     key[0] === layout &&
+    key[9] === sourceRim &&
+    key[10] === targetRim &&
+    (!sourceRim || key[11] === source.style) &&
+    (!targetRim || key[12] === target.style) &&
     key[1] === sx &&
     key[2] === sy &&
     key[3] === shw &&
@@ -472,13 +482,94 @@ function routeOf(edge, layout) {
     key[8] === thh
   )
     return edge.route;
-  edge.routeKey = [layout, sx, sy, shw, shh, tx, ty, thw, thh];
-  edge.route = edgeRoute(
+  edge.routeKey = [
+    layout,
+    sx,
+    sy,
+    shw,
+    shh,
+    tx,
+    ty,
+    thw,
+    thh,
+    sourceRim,
+    targetRim,
+    source.style,
+    target.style,
+  ];
+  const route = edgeRoute(
     { x: sx, y: sy, hw: shw, hh: shh },
     { x: tx, y: ty, hw: thw, hh: thh },
     layout,
   );
+  edge.route =
+    sourceRim || targetRim
+      ? trimAtPorts(
+          route,
+          edge,
+          layout,
+          [sx, sy, shw, shh, sourceRim],
+          [tx, ty, thw, thh, targetRim],
+        )
+      : route;
   return edge.route;
+}
+
+/**
+ * A card's port dots sit on its border where the flow's edges meet it: how far (world units) an edge ending there
+ * should stop short, to meet the dot's rim instead of its centre (so an arrowhead shows beside the dot). 0: no port.
+ * Encodes which ports exist: in (leaf side) and out (root side) both use the same radius.
+ */
+function portRim(record, x, y, hw, hh, layout) {
+  const style = record.style;
+  if (style?.look !== "card" || !(style.portSize > 0)) return 0;
+  const direction = layout.portDirection;
+  if (!direction || (!direction.x && !direction.y)) return 0;
+  if (!style.portIn && !style.portOut) return 0;
+  return (style.portSize / 2 + 1) * (record.scale?.value ?? 1);
+}
+
+/**
+ * The route, its ends pulled back to a port's rim where they land on a drawn port (within half a unit of its centre):
+ * the out port on the root side of the flow, the in port opposite.
+ */
+function trimAtPorts(
+  route,
+  edge,
+  layout,
+  [sx, sy, shw, shh, sourceRim],
+  [tx, ty, thw, thh, targetRim],
+) {
+  const direction = layout.portDirection;
+  const points = route.map((point) => ({ ...point }));
+  const atPort = (point, style, x, y, hw, hh) => {
+    const along = Math.abs(direction.x) * hw + Math.abs(direction.y) * hh;
+    for (const [sign, port] of [
+      [1, style.portOut],
+      [-1, style.portIn],
+    ]) {
+      if (!port) continue;
+      const px = x + direction.x * along * sign,
+        py = y + direction.y * along * sign;
+      if (Math.abs(point.x - px) < 0.5 && Math.abs(point.y - py) < 0.5)
+        return true;
+    }
+    return false;
+  };
+  const pull = (end, next, rim) => {
+    const dx = next.x - end.x,
+      dy = next.y - end.y;
+    const length = Math.hypot(dx, dy);
+    if (length <= rim) return;
+    end.x += (dx / length) * rim;
+    end.y += (dy / length) * rim;
+  };
+  const last = points.length - 1;
+  if (sourceRim && atPort(points[0], edge.source.style, sx, sy, shw, shh))
+    pull(points[0], points[1], sourceRim);
+  if (targetRim && atPort(points[last], edge.target.style, tx, ty, thw, thh))
+    pull(points[last], points[last - 1], targetRim);
+  return points;
 }
 
 /** Whether `ids` (repeats allowed: the selected node can also be the hovered one) are exactly `set`. */

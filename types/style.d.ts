@@ -164,7 +164,14 @@ export type EdgeStyle = {
   color: string;
   width: number;
   alpha: number;
-  pattern: "dashed" | "dotted" | null;
+  /**
+   * arrows: small chevrons pointing toward `patternToward`
+   */
+  pattern: "dashed" | "dotted" | "arrows" | null;
+  /**
+   * which end the "arrows" pattern points to (flowToward)
+   */
+  patternToward: "target" | "source";
   arrowAtSource: string | null;
   arrowAtTarget: string | null;
   arrowScale: number;
@@ -228,6 +235,7 @@ export declare const EDGE_STYLE_SCHEMA: Readonly<{
   width: import("tether/schema.js").Field;
   alpha: import("tether/schema.js").Field;
   pattern: import("tether/schema.js").Field;
+  patternToward: import("tether/schema.js").Field;
   arrowAtSource: import("tether/schema.js").Field;
   arrowAtTarget: import("tether/schema.js").Field;
   arrowScale: import("tether/schema.js").Field;

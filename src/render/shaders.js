@@ -284,6 +284,7 @@ void main() {
   vec2 normal = vec2(-unit.y, unit.x);
   float halfWidth = lineParams.x * pixelScale * 0.5;
   float margin = halfWidth + 1.5 + (extraParams.z > 0.0 || lineParams.w != 0.0 ? 7.0 * pixelScale : 0.0);
+  if (lineParams.z > 2.5) margin = max(margin, max(5.5 * pixelScale, halfWidth * 3.0) + 1.5); // chevrons are taller
   float along = mix(-margin, segmentLength + margin, corner.x);
   float across = corner.y * margin;
   vec2 position = a + unit * along + normal * across;
@@ -322,11 +323,22 @@ void main() {
       float period = 11.0 * pixelScale, on = 6.5 * pixelScale;
       float phase = mod(position, period);
       line *= clamp(on - phase + 0.5, 0.0, 1.0) * clamp(phase + 0.5, 0.0, 1.0);
-    } else {
+    } else if (vPattern < 2.5) {
       float period = 6.5 * pixelScale;
       float offset = mod(position, period) - period * 0.5;
       float radius = max(vHalfWidth, 1.1 * pixelScale);
       line = clamp(0.5 - (length(vec2(offset, local.y)) - radius), 0.0, 1.0);
+    } else {
+      // Arrows: a dotted line of small chevrons (›), pointing at the target (3) or the source (4).
+      float period = 14.0 * pixelScale;
+      float direction = vPattern < 3.5 ? 1.0 : -1.0;
+      float u = (mod(direction * position, period) - period * 0.5);
+      float height = max(4.5 * pixelScale, vHalfWidth * 2.6);
+      float thickness = max(1.6 * pixelScale, vHalfWidth * 1.1);
+      float v = abs(local.y);
+      float chevron = abs(u + v - height * 0.5) * 0.7071 - thickness * 0.5;
+      chevron = max(chevron, v - height);
+      line = clamp(0.5 - chevron, 0.0, 1.0);
     }
   }
   vec3 rgb = vColor.rgb;

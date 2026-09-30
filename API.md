@@ -122,6 +122,7 @@ The layout and physics options are Tether's settings: `layout`, `direction`, `la
 | `cardValueSize` | `12` | 4 – 48 | The value's font size. |
 | `cardStripeWidth` | `3` | 0 – 20 | The colour stripe down the card's left edge (0: none). |
 | `cardStripeInset` | `7` | 0 – 100 | How far the stripe stops short of the card's top and bottom. |
+| `cardConnectors` | `"dots"` | `dots`, `arrows`, `both` | Where edges meet a card: port "dots", "arrows" (arrowheads, at the end arrowEnd picks), or "both" (the arrowhead stops at the dot). |
 | `cardPortSize` | `8` | 0 – 40 | The port dots where the flow's edges meet a card (0: none). |
 | `cardDetailZoom` | `0.55` | 0 – 4 | Below this zoom cards show only their title; below labelFadeZoom, no text at all. |
 
@@ -149,7 +150,7 @@ The layout and physics options are Tether's settings: `layout`, `direction`, `la
 | `edgeCurvature` | `1` | -4 – 4 | Arcs (radial layouts): how far edges bow. |
 | `edgeWidth` | `1.6` | 0.1 – 20 | Edge width, in screen pixels. |
 | `edgeOpacity` | `1` | 0 – 1 | How opaque edges are. |
-| `edgeLineStyle` | `"solid"` | `solid`, `dashed`, `dotted` | Every edge's line pattern (classes can override it). |
+| `edgeLineStyle` | `"solid"` | `solid`, `dashed`, `dotted`, `arrows` | Every edge's line pattern (classes can override it). "arrows": a dotted line of small chevrons pointing the way the graph flows (flowToward). |
 | `edgeColorMode` | `"neutral"` | `neutral`, `source`, `target` | "neutral": the theme's edge colour; "source" or "target": the colour of the node at that end. |
 | `showArrows` | `true` | true / false | Draw arrowheads. |
 | `arrowShape` | `"triangle"` | `triangle`, `vee`, `chevron`, `triangle-backcurve`, `circle`, `square`, `tee`, or registered | A built-in arrowhead, or one added with registerArrowShape(). |
@@ -282,7 +283,7 @@ view.setOptions({
 | EdgeStyle | What it is |
 | --- | --- |
 | `color`, `width`, `alpha` | the line |
-| `pattern` | `"dashed"`, `"dotted"` or null |
+| `pattern` | `"dashed"`, `"dotted"`, `"arrows"` (small chevrons pointing toward `patternToward`, which follows `flowToward`) or null |
 | `arrowAtSource`, `arrowAtTarget` | an arrowhead shape, or null |
 | `arrowScale` | arrowhead size |
 | `label`, `fontSize` | the label |
@@ -320,6 +321,9 @@ view.render({
   edges: [],
 });
 ```
+
+Where edges meet a card, `cardConnectors` picks the connector: port `"dots"` (the default), `"arrows"` (arrowheads,
+on the end `arrowEnd` picks) or `"both"` (the arrowhead stops at the dot's rim, beside it).
 
 `subtitle` and `value` are a string or a list of runs: strings, `{ text, color }`, `{ mark: color }` (a small square)
 and `{ dot: color }` (a small circle). Card style fields: `width`, `height`, `stripe`, `portIn` (the leaf side of the

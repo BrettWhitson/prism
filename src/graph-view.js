@@ -799,18 +799,47 @@ export class GraphView extends Emitter {
     // Ports only where edges meet the card: in on the leaf side (it has children), out on the root side (a parent).
     if (!this.#outgoing.get(id)?.length) style.portIn = null;
     if (!this.#incoming.get(id)?.length) style.portOut = null;
+    if (this.#options.cardConnectors === "arrows")
+      style.portIn = style.portOut = null;
     return style;
   }
 
   #edgeStyle(id) {
-    const { data, classes } = this.#edges.get(id);
-    return resolveEdgeStyle(
+    const { data, classes, source, target } = this.#edges.get(id);
+    const style = resolveEdgeStyle(
       classes,
       data,
       this.#options,
       this.#theme,
       this.#classStyles,
     );
+    // Where an edge meets a card, cardConnectors decides: dots only (no arrowhead), or an arrowhead (on the end
+    // arrowEnd picks, showArrows or not).
+    const o = this.#options;
+    const arrow = o.arrowShape;
+    for (const [end, key, wanted] of [
+      [source, "arrowAtSource", o.arrowEnd !== "target"],
+      [target, "arrowAtTarget", o.arrowEnd !== "source"],
+    ]) {
+      if (!this.#isCard(end)) continue;
+      if (o.cardConnectors === "dots") style[key] = null;
+      else if (wanted) style[key] ??= arrow;
+    }
+    return style;
+  }
+
+  /** Is this node drawn as a card? (its look, from the options, a class rule or the hook) */
+  #isCard(id) {
+    const node = this.#nodes.get(id);
+    if (!node) return false;
+    // Only rules and hooks can change a node's look: without them, the option decides.
+    if (
+      !this.#classStyles.nodes &&
+      !this.#options.nodeStyle &&
+      !node.data.style?.look
+    )
+      return this.#options.nodeLook === "card";
+    return this.#nodeStyle(id).look === "card";
   }
 
   #indexEdges() {

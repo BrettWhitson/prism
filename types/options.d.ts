@@ -14,6 +14,7 @@ export type Options = import("tether/index.js").LayoutSettings & {
   cardStripeInset: number;
   cardPortSize: number;
   cardDetailZoom: number;
+  cardConnectors: "dots" | "arrows" | "both";
   nodeSize: number;
   nodeSizeScale: number;
   rootSizeScale: number;
@@ -38,7 +39,7 @@ export type Options = import("tether/index.js").LayoutSettings & {
   edgeCurvature: number;
   edgeWidth: number;
   edgeOpacity: number;
-  edgeLineStyle: "solid" | "dashed" | "dotted";
+  edgeLineStyle: "solid" | "dashed" | "dotted" | "arrows";
   edgeColorMode: "neutral" | "source" | "target";
   showArrows: boolean;
   arrowShape: string;
@@ -100,13 +101,14 @@ export type Options = import("tether/index.js").LayoutSettings & {
  *   nodeLook: "icon" | "card", cardWidth: number, cardHeight: number, cardIconSize: number, cardIconInset: number,
  *   cardPadding: number, cardTitleSize: number, cardSubtitleSize: number, cardValueSize: number,
  *   cardStripeWidth: number, cardStripeInset: number, cardPortSize: number, cardDetailZoom: number,
+ *   cardConnectors: "dots" | "arrows" | "both",
  *   nodeSize: number, nodeSizeScale: number, rootSizeScale: number, nodeShape: string, tintNodeFill: boolean,
  *   tintFillAlpha: number, nodeBorderWidth: number, rootBorderBoost: number, showIcons: boolean,
  *   showLabels: boolean, fontSize: number, labelFontScale: number, rootFontScale: number,
  *   labelPosition: "auto" | "below" | "above" | "left" | "right", labelBackdrop: boolean, labelFadeZoom: number,
  *   labelWidth: number, labelWrapScale: number, labelOverflow: "wrap" | "ellipsis",
  *   edgeRouting: string, edgeCornerRadius: number, edgeCurvature: number, edgeWidth: number, edgeOpacity: number,
- *   edgeLineStyle: "solid" | "dashed" | "dotted", edgeColorMode: "neutral" | "source" | "target",
+ *   edgeLineStyle: "solid" | "dashed" | "dotted" | "arrows", edgeColorMode: "neutral" | "source" | "target",
  *   showArrows: boolean, arrowShape: string, arrowEnd: "target" | "source" | "both", arrowScale: number,
  *   edgeLabels: boolean,
  *   hoverMode: "both" | "ancestors" | "descendants" | "none", hoverDelay: number, lineageColor: "theme" | "edge", pinSelectionLineage: boolean,

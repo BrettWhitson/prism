@@ -165,7 +165,8 @@ export function resolveTheme(patch, options = {}) {
  * @property {string} color
  * @property {number} width
  * @property {number} alpha
- * @property {"dashed" | "dotted" | null} pattern
+ * @property {"dashed" | "dotted" | "arrows" | null} pattern  arrows: small chevrons pointing toward `patternToward`
+ * @property {"target" | "source"} patternToward  which end the "arrows" pattern points to (flowToward)
  * @property {string | null} arrowAtSource
  * @property {string | null} arrowAtTarget
  * @property {number} arrowScale
@@ -230,7 +231,11 @@ export const EDGE_STYLE_SCHEMA = Object.freeze({
   color: field("color"),
   width: field("number", { min: 0, max: 1000 }),
   alpha: field("number", { min: 0, max: 1 }),
-  pattern: field("enum", { values: ["dashed", "dotted"], nullable: true }),
+  pattern: field("enum", {
+    values: ["dashed", "dotted", "arrows"],
+    nullable: true,
+  }),
+  patternToward: field("enum", { values: ["target", "source"] }),
   arrowAtSource: field("string", { nullable: true }),
   arrowAtTarget: field("string", { nullable: true }),
   arrowScale: field("number", { min: 0, max: 100 }),
@@ -433,9 +438,12 @@ export function resolveEdgeStyle(classes, data, o, theme, rules = {}) {
     width: o.edgeWidth,
     alpha: o.edgeOpacity,
     pattern:
-      o.edgeLineStyle === "dashed" || o.edgeLineStyle === "dotted"
+      o.edgeLineStyle === "dashed" ||
+      o.edgeLineStyle === "dotted" ||
+      o.edgeLineStyle === "arrows"
         ? o.edgeLineStyle
         : null,
+    patternToward: o.flowToward,
     arrowAtSource: o.arrowEnd !== "target" ? arrow : null,
     arrowAtTarget: o.arrowEnd !== "source" ? arrow : null,
     arrowScale: o.arrowScale,

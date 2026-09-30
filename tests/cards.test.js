@@ -3,9 +3,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   DEFAULT_THEME,
+  resolveEdgeStyle,
   resolveNodeStyle,
   resolveOptions,
 } from "../src/index.js";
+import { InstanceData } from "../src/render/instance-data.js";
 import {
   cardTextLayout,
   ellipsize,
@@ -154,4 +156,72 @@ test("ellipsize: fits the width, ends in an ellipsis when cut", () => {
   assert.equal(ellipsize(context, "short", 100), "short");
   assert.equal(ellipsize(context, "a long title", 60), "a lon…");
   assert.equal(ellipsize(context, "abc", 5), "");
+});
+
+test("the arrows pattern points the way flowToward says", () => {
+  const toTarget = resolveEdgeStyle(
+    new Set(),
+    {},
+    resolveOptions({ edgeLineStyle: "arrows" }),
+    DEFAULT_THEME,
+  );
+  assert.equal(toTarget.pattern, "arrows");
+  assert.equal(toTarget.patternToward, "target");
+  const toSource = resolveEdgeStyle(
+    new Set(),
+    {},
+    resolveOptions({ edgeLineStyle: "arrows", flowToward: "source" }),
+    DEFAULT_THEME,
+  );
+  assert.equal(toSource.patternToward, "source");
+});
+
+test("edges stop at a card's port rim, so an arrowhead shows beside the dot", () => {
+  const value = (v) => ({ value: v });
+  const record = (id, x, style) => ({
+    id,
+    px: value(x),
+    py: value(0),
+    alpha: value(1),
+    scale: value(1),
+    glow: value(0),
+    hw: 111,
+    hh: 32,
+    fill: [0, 0, 0, 1],
+    border: [1, 1, 1, 1],
+    aura: [0, 0, 0, 0],
+    ring: [0, 0, 0, 0],
+    glowColor: [1, 1, 1],
+    style,
+  });
+  const card = { look: "card", portSize: 8, portIn: "#fff", portOut: "#fff" };
+  const route = (targetStyle) => {
+    const edge = {
+      id: "e",
+      source: record("root", 400, { ...card }),
+      target: record("leaf", 0, targetStyle),
+      alpha: value(1),
+      emphasis: value(0),
+      color: [1, 1, 1],
+      style: { width: 2 },
+    };
+    const data = new InstanceData();
+    data.rebuild({
+      ghosts: [],
+      nodes: [edge.source, edge.target],
+      edges: [edge],
+      top: [],
+      layout: { routing: "taxi", flowAxis: "x", portDirection: { x: 1, y: 0 } },
+      iconUv: () => null,
+    });
+    return edge.route;
+  };
+  // LR: the root is on the right; the edge leaves the root's in port (its left) and reaches the leaf's out port.
+  const withPorts = route({ ...card });
+  assert.equal(withPorts[0].x, 400 - 111 - 5);
+  assert.equal(withPorts.at(-1).x, 111 + 5);
+  const noPort = route({ ...card, portOut: null });
+  assert.equal(noPort.at(-1).x, 111);
+  const icon = route({ look: "icon" });
+  assert.equal(icon.at(-1).x, 111);
 });
