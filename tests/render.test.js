@@ -80,6 +80,37 @@ test("spatial grid: queries find overlapping boxes once; hits prefer the topmost
   );
 });
 
+test("spatial grid: huge and non-finite boxes don't hang it, and still answer", () => {
+  const grid = new SpatialGrid(10);
+  grid.insert(0, { x1: 0, y1: 0, x2: 5, y2: 5 });
+  grid.insert(1, { x1: -Infinity, y1: 0, x2: Infinity, y2: 5 });
+  grid.insert(2, { x1: -1e12, y1: -1e12, x2: 1e12, y2: 1e12 });
+  grid.insert(3, { x1: NaN, y1: NaN, x2: NaN, y2: NaN });
+  assert.equal(
+    grid.hit(2, 2),
+    2,
+    "the topmost, even when it's too big for cells",
+  );
+  assert.equal(
+    grid.hit(2, 2, (i) => i !== 2),
+    1,
+    "accept() passes some over",
+  );
+  assert.equal(
+    grid.hit(2, 2, (i) => i === 0),
+    0,
+  );
+  assert.deepEqual(
+    [...grid.query({ x1: 1, y1: 1, x2: 2, y2: 2 })].sort(),
+    [0, 1, 2],
+  );
+  grid.move(2, { x1: 100, y1: 100, x2: 105, y2: 105 });
+  grid.move(0, { x1: -Infinity, y1: -1, x2: 0, y2: 1 });
+  assert.equal(grid.hit(2, 2), 1);
+  assert.equal(grid.hit(102, 102), 2);
+  assert.equal(grid.hit(-1e9, -0.5), 0);
+});
+
 test("atlas packer: rows, then new shelves, then new pages", () => {
   const packer = new AtlasPacker(100, 0);
   assert.deepEqual(packer.place(40, 20), { page: 0, x: 0, y: 0 });
@@ -97,6 +128,10 @@ test("atlas packer: rows, then new shelves, then new pages", () => {
 test("edges attach to box borders; taxi edges bend in the middle; arrows point at the tip", () => {
   assert.deepEqual(boxExit(0, 0, 10, 5, 100, 0), { x: 10, y: 0 });
   assert.deepEqual(boxExit(0, 0, 10, 5, 0, -100), { x: 0, y: -5 });
+  // Zero-size boxes: no NaN.
+  assert.deepEqual(boxExit(0, 0, 0, 0, 0, -100), { x: 0, y: 0 });
+  assert.deepEqual(boxExit(0, 0, 0, 5, 0, 100), { x: 0, y: 5 });
+  assert.deepEqual(boxExit(0, 0, 0, 5, 30, 40), { x: 0, y: 0 });
   const a = { x: 0, y: 0, hw: 10, hh: 10 },
     b = { x: 100, y: 100, hw: 10, hh: 10 };
   assert.deepEqual(edgePoints(a, b, "taxi", "y"), [

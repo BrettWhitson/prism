@@ -23,6 +23,8 @@ import {
   parseColor,
   wrapLabel,
 } from "../src/render/webgl-graph.js";
+import { parseColorAlpha } from "../src/render/color.js";
+import { MAX_LABEL_BITMAP, labelBitmapScale } from "../src/render/labels.js";
 
 test("springs settle on their target in about the requested time, and keep velocity when retargeted", () => {
   const params = springFor(500, "smooth");
@@ -55,6 +57,20 @@ test("springs settle on their target in about the requested time, and keep veloc
   assert.equal(moving.velocity, velocity);
   moving.snap(5);
   assert.equal(moving.moving, false);
+});
+
+test("springs ignore targets and jumps that aren't finite numbers", () => {
+  const spring = new Spring(NaN, springFor(300));
+  assert.equal(spring.value, 0, "a start that isn't a number is 0");
+  spring.set(10);
+  for (const bad of [NaN, Infinity, -Infinity, undefined]) {
+    spring.set(bad);
+    spring.snap(bad);
+  }
+  assert.equal(spring.target, 10);
+  assert.equal(spring.value, 0);
+  while (spring.step(1 / 60));
+  assert.equal(spring.value, 10);
 });
 
 test("springs stay stable with long frames (a background tab)", () => {
@@ -232,45 +248,51 @@ test("arrowheads: every shape is whole triangles with its tip at the origin", ()
 
 test("transition plan: new nodes grow out of their nearest shown ancestor; removed ones fold into theirs", () => {
   const previous = new Map([
-    ["r", { x: 0, y: 0 }],
-    ["r/0", { x: 10, y: 0 }],
-    ["r/0/1", { x: 20, y: 0 }],
+    ["root", { x: 0, y: 0 }],
+    ["a", { x: 10, y: 0 }],
+    ["a1", { x: 20, y: 0 }],
+    ["a1x", { x: 30, y: 0 }],
     ["gone", { x: 99, y: 99 }],
   ]);
   const parentOf = new Map([
-    ["r/0", "r"],
-    ["r/0/5", "r/0"],
-    ["r/0/5/2", "r/0/5"],
+    ["a", "root"],
+    ["b", "a"],
+    ["b2", "b"],
   ]);
   const plan = planTransition({
     previous,
-    nodeIds: ["r", "r/0", "r/0/5", "r/0/5/2"],
+    nodeIds: ["root", "a", "b", "b2"],
     parentOf,
-    previousParentOf: new Map([["gone", "r/0"]]),
-    rootId: "r",
+    previousParentOf: new Map([
+      ["a", "root"],
+      ["a1", "a"],
+      ["a1x", "a1"],
+      ["gone", "a"],
+    ]),
+    rootId: "root",
   });
   assert.deepEqual(
-    plan.startOf("r/0"),
+    plan.startOf("a"),
     { x: 10, y: 0 },
     "survivors start where they are",
   );
   assert.deepEqual(
-    plan.startOf("r/0/5/2"),
+    plan.startOf("b2"),
     { x: 10, y: 0 },
     "grandchildren grow from the nearest shown ancestor",
   );
   const final = new Map([
-    ["r", { x: 0, y: 50 }],
-    ["r/0", { x: 10, y: 50 }],
+    ["root", { x: 0, y: 50 }],
+    ["a", { x: 10, y: 50 }],
   ]);
   const ghosts = plan.ghostDestinations(final);
-  assert.deepEqual(ghosts.get("r/0/1"), { x: 10, y: 50 }, "by tree path");
+  assert.deepEqual(ghosts.get("gone"), { x: 10, y: 50 }, "into its parent");
   assert.deepEqual(
-    ghosts.get("gone"),
+    ghosts.get("a1x"),
     { x: 10, y: 50 },
-    "by the old graph's links",
+    "past a parent that's also leaving, into the nearest that stays",
   );
-  assert.ok(!ghosts.has("r/0"), "survivors aren't ghosts");
+  assert.ok(!ghosts.has("a"), "survivors aren't ghosts");
 
   const cyclic = planTransition({
     previous: new Map(),
@@ -283,26 +305,102 @@ test("transition plan: new nodes grow out of their nearest shown ancestor; remov
   assert.equal(cyclic.startOf("a"), null, "cycles end the walk");
 });
 
+test("transition plan: ids mean nothing; ghosts with no surviving ancestor go to the anchor or stay put", () => {
+  const previous = new Map([
+    ["top", { x: 0, y: 0 }],
+    ["top/child", { x: 5, y: 5 }],
+    ["p", { x: 1, y: 1 }],
+    ["q", { x: 2, y: 2 }],
+  ]);
+  const plan = planTransition({
+    previous,
+    nodeIds: ["top"],
+    parentOf: new Map(),
+    // "top/child" has no recorded parent; p and q are each other's parents (a cycle), both leaving.
+    previousParentOf: new Map([
+      ["p", "q"],
+      ["q", "p"],
+    ]),
+  });
+  const final = new Map([["top", { x: 0, y: 40 }]]);
+  const ghosts = plan.ghostDestinations(final);
+  assert.deepEqual(
+    ghosts.get("top/child"),
+    { x: 5, y: 5 },
+    "a slash in an id isn't a path: it fades where it is",
+  );
+  assert.deepEqual(ghosts.get("p"), { x: 1, y: 1 }, "a cycle ends the walk");
+  assert.deepEqual(ghosts.get("q"), { x: 2, y: 2 });
+  const anchored = plan.ghostDestinations(final, "top");
+  for (const id of ["top/child", "p", "q"])
+    assert.deepEqual(anchored.get(id), { x: 0, y: 40 }, `${id} to the anchor`);
+});
+
 test("labels wrap by width, keep their own line breaks, or are cut with an ellipsis", () => {
   const measure = (text) => text.length * 6;
-  assert.deepEqual(wrapLabel("250 × Copper Wire", 60, "wrap", measure), [
-    "250 ×",
-    "Copper",
-    "Wire",
+  assert.deepEqual(wrapLabel("One two three", 42, "wrap", measure), [
+    "One two",
+    "three",
   ]);
-  assert.deepEqual(wrapLabel("short\n(have 3)", 100, "wrap", measure), [
+  assert.deepEqual(wrapLabel("short\n(3 more)", 100, "wrap", measure), [
     "short",
-    "(have 3)",
+    "(3 more)",
   ]);
   const [cut] = wrapLabel("A very long node name", 60, "ellipsis", measure);
   assert.ok(cut.endsWith("…") && measure(cut) <= 60);
   assert.deepEqual(wrapLabel("no limit", 0, "wrap", measure), ["no limit"]);
 });
 
-test("colours parse from #rrggbb and #rgb", () => {
+test("labels: a word wider than a line is broken; cuts never split a character", () => {
+  const measure = (text) => [...text].length * 6; // per code point
+  assert.deepEqual(wrapLabel("Supercalifragilistic go", 42, "wrap", measure), [
+    "Superca",
+    "lifragi",
+    "listic",
+    "go",
+  ]);
+  const lines = wrapLabel("x " + "y".repeat(30), 30, "wrap", measure);
+  assert.ok(lines.every((line) => measure(line) <= 30));
+  assert.equal(lines.join("").replaceAll(" ", ""), "x" + "y".repeat(30));
+  assert.deepEqual(
+    wrapLabel("W", 1, "wrap", measure),
+    ["W"],
+    "a character wider than the line still shows",
+  );
+
+  const face = "\u{1F600}"; // outside the BMP: a surrogate pair
+  const [cut] = wrapLabel(face.repeat(10), 30, "ellipsis", measure);
+  assert.equal(cut, face.repeat(4) + "…");
+  for (const line of wrapLabel(face.repeat(10), 30, "wrap", measure))
+    assert.equal(line, face.repeat(line.length / 2), "whole pairs only");
+});
+
+test("label bitmaps are drawn at 2×, less when that would be too big for a canvas", () => {
+  assert.equal(labelBitmapScale(100, 20), 2);
+  assert.equal(labelBitmapScale(4096, 20), 1);
+  assert.ok(labelBitmapScale(20, 1e6) * 1e6 <= MAX_LABEL_BITMAP);
+  assert.equal(labelBitmapScale(0, 0), 2);
+});
+
+test("colours parse from hex (with or without alpha), rgb() and transparent", () => {
   assert.deepEqual(parseColor("#ff0000"), [1, 0, 0]);
   assert.deepEqual(parseColor("#0f0"), [0, 1, 0]);
+  assert.deepEqual(parseColor("#0000FF"), [0, 0, 1]);
   assert.equal(parseColor("nonsense").length, 3);
+  assert.deepEqual(parseColorAlpha("#ff000080"), [1, 0, 0, 128 / 255]);
+  assert.deepEqual(parseColorAlpha("#0f08"), [0, 1, 0, 136 / 255]);
+  assert.deepEqual(parseColorAlpha("#fff"), [1, 1, 1, 1]);
+  assert.deepEqual(parseColorAlpha("rgb(255, 0, 0)"), [1, 0, 0, 1]);
+  assert.deepEqual(parseColorAlpha("rgba(0, 255, 0, 0.5)"), [0, 1, 0, 0.5]);
+  assert.deepEqual(parseColorAlpha("rgb(0 0 255 / 25%)"), [0, 0, 1, 0.25]);
+  assert.deepEqual(parseColorAlpha("transparent"), [0, 0, 0, 0]);
+  assert.deepEqual(parseColor("#ff000080"), [1, 0, 0], "alpha dropped");
+  // No document in Node: names can't be read, and come back grey (opaque).
+  const grey = parseColorAlpha("rebeccapurple");
+  assert.equal(grey.length, 4);
+  assert.equal(grey[3], 1);
+  assert.deepEqual(parseColorAlpha(null), grey);
+  assert.deepEqual(parseColorAlpha("#12345"), grey, "not a hex length");
 });
 
 test("colour fades: nodes and edges blend from the old colours to the new ones", () => {

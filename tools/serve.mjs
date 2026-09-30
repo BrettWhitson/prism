@@ -21,10 +21,18 @@ const MIME_TYPES = {
 };
 const port = Number(process.argv[2] ?? process.env.PORT ?? 8650);
 
-/** Map a request URL to a file inside the project, refusing anything that escapes it. */
-async function resolveFile(requestUrl) {
-  const { pathname } = new URL(requestUrl, "http://localhost");
-  const filePath = path.resolve(ROOT, `.${decodeURIComponent(pathname)}`);
+/** The request's path, decoded, or null when it can't be read (a malformed URL or escape). */
+function requestPath(requestUrl) {
+  try {
+    return decodeURIComponent(new URL(requestUrl, "http://localhost").pathname);
+  } catch {
+    return null;
+  }
+}
+
+/** Map a decoded request path to a file inside the project, refusing anything that escapes it. */
+async function resolveFile(pathname) {
+  const filePath = path.resolve(ROOT, `.${pathname}`);
   if (filePath !== ROOT && !filePath.startsWith(ROOT + path.sep)) return null;
   try {
     const info = await stat(filePath);
@@ -35,12 +43,18 @@ async function resolveFile(requestUrl) {
 }
 
 createServer(async (request, response) => {
-  if (new URL(request.url, "http://localhost").pathname === "/") {
+  const pathname = requestPath(request.url);
+  if (pathname === null) {
+    response.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+    response.end("Bad request");
+    return;
+  }
+  if (pathname === "/") {
     response.writeHead(302, { Location: "/demo/" });
     response.end();
     return;
   }
-  const filePath = await resolveFile(request.url);
+  const filePath = await resolveFile(pathname);
   const body = filePath && (await readFile(filePath).catch(() => null));
   if (!body) {
     response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
