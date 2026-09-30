@@ -149,7 +149,7 @@ const field = (type, extra = {}) => ({ type, default: undefined, ...extra });
  * value that can't be used is left out (the style keeps what it had), and a number out of range is clamped.
  */
 export const NODE_STYLE_SCHEMA = Object.freeze({
-  size: field("number", { min: 0, max: 100000 }),
+  size: field("number", { min: 1, max: 100000 }), // at least 1: a node never vanishes
   shape: field("string"),
   fill: field("color"),
   fillAlpha: field("number", { min: 0, max: 1 }),

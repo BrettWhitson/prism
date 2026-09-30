@@ -297,7 +297,7 @@ test("style values are checked: clamped, or left out with one warning per source
     return out;
   });
   const style = result[0];
-  assert.equal(style.size, 0); // clamped
+  assert.equal(style.size, 1); // clamped to the smallest size, never invisible
   assert.equal(style.border, DEFAULT_THEME.node); // left as it was
   assert.equal(style.pattern, "solid");
   assert.equal(style.fillAlpha, 1);
