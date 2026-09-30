@@ -1,5 +1,9 @@
 # Prism
 
+> **This repository is archived.** Prism is now part of
+> [Prismatrix](https://github.com/BrettWhitson/prismatrix), the view and renderer (`prismatrix`), with this repository's full history.
+> Its tags here keep working for anything still pinned to them.
+
 A graphing and rendering engine for the browser. Give it nodes and edges; it styles them and draws them on the GPU
 (WebGL2), morphs smoothly from one graph to the next, and handles what the viewer does: hover lineage, selection,
 highlights, panning and zooming, fitting the view and PNG export. It holds 60 fps at 10,000 nodes.
