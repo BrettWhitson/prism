@@ -1645,13 +1645,15 @@ ${error.message}`,
     // Card nodes carry their text inside: drawn under the labels, never thinned (it can't collide).
     const cardOpacity = all ? 1 : this.#labelOpacity(zoom);
     const detail = all || zoom >= this.#labels.cardDetailZoom;
+    // New cards' bitmaps are made within a time budget per frame; past it, a card's text is drawn straight onto the
+    // layer this frame (cheaper once, no bitmap), so panning into a crowd of new cards never stalls a frame.
+    const bitmapDeadline = all ? Infinity : performance.now() + 4;
     for (const index of visible) {
       const record = this.#nodes[index];
       if (record?.style.look !== "card") continue;
       const opacity = cardOpacity * Math.min(1, record.alpha.value * 1.2);
       if (opacity < 0.02) continue;
       const s = record.scale.value * zoom;
-      const image = this.#cardImage(record, s * (all ? 1 : this.dpr), detail);
       const centre = camera.toScreen(record.px.value, record.py.value);
       const w = record.hw * 2 * s,
         h = (record.hh * 2 + CARD_TAG_ROOM) * s;
@@ -1660,7 +1662,21 @@ ${error.message}`,
       if (!all && (x1 > width || x1 + w < 0 || y1 > height || y1 + h < 0))
         continue;
       context.globalAlpha = opacity;
-      context.drawImage(image, x1, y1, w, h);
+      const { image, card } = this.#cardImage(
+        record,
+        s * (all ? 1 : this.dpr),
+        detail,
+        performance.now() < bitmapDeadline,
+      );
+      if (image) {
+        context.drawImage(image, x1, y1, w, h);
+        continue;
+      }
+      context.save();
+      context.translate(x1, y1);
+      context.scale(w / card.width, h / (card.height + CARD_TAG_ROOM));
+      drawCardText(context, card, { detail });
+      context.restore();
     }
     for (const index of visible) {
       const record = this.#nodes[index];
@@ -1767,7 +1783,7 @@ ${error.message}`,
    * A card's text as a bitmap (card-text.js), drawn at `pixelsPerUnit` rounded up to a power of two (between ½ and 4),
    * so zooming reuses a few sizes. Kept in a least-recently-used cache capped by pixels.
    */
-  #cardImage(record, pixelsPerUnit, detail) {
+  #cardImage(record, pixelsPerUnit, detail, create = true) {
     const style = record.style;
     const bucket =
       2 **
@@ -1805,8 +1821,9 @@ ${error.message}`,
     if (image) {
       cache.delete(key); // most recently used goes last
       cache.set(key, image);
-      return image;
+      return { image, card };
     }
+    if (!create) return { image: null, card };
     image = document.createElement("canvas");
     image.width = Math.max(1, Math.ceil(width * bucket));
     image.height = Math.max(1, Math.ceil((height + CARD_TAG_ROOM) * bucket));
@@ -1821,7 +1838,7 @@ ${error.message}`,
       this.#cardCachePixels -= old.width * old.height;
       old.width = old.height = 0;
     }
-    return image;
+    return { image, card };
   }
 
   #cardCache = new Map();

@@ -2,9 +2,8 @@ import {
   Emitter,
   LayoutGraph,
   LivePhysics,
-  isDirectionalLayout,
   runLayout,
-  treeDirection,
+  flowOf,
   uniqueById,
 } from "tether/index.js";
 import { WebGLGraph } from "./render/webgl-graph.js";
@@ -57,14 +56,6 @@ import {
 
 /** Options that change every node's box: changing one lays the graph out again. */
 const RELAYOUT_OPTIONS = new Set(["nodeLook", "cardWidth", "cardHeight"]);
-
-/** Each flow direction's root side (edges run parent → child, root outward), where a card's out port sits. */
-const ROOT_SIDE = {
-  TB: { x: 0, y: 1 },
-  BT: { x: 0, y: -1 },
-  LR: { x: 1, y: 0 },
-  RL: { x: -1, y: 0 },
-};
 
 /** Handler names (the constructor's `handlers`) → the event they listen to. */
 const HANDLER_EVENTS = {
@@ -350,6 +341,7 @@ export class GraphView extends Emitter {
     });
     this.#parentOf = parentOf;
 
+    this.#resolvedStyles.clear();
     this.#nodes = new Map(
       nodes.map((node) => {
         const classes = classSet(node.classes);
@@ -629,6 +621,7 @@ export class GraphView extends Emitter {
     this.#lineage = { nodeId: null, isPinned: false, dimmed: null };
     this.#pinnedNodeId = null;
     this.#highlightIds = this.#flashIds = null;
+    this.#resolvedStyles.clear();
     this.#nodes = new Map();
     this.#edges = new Map();
     this.#parentOf = new Map();
@@ -734,9 +727,7 @@ export class GraphView extends Emitter {
       flowAxis: resolveFlowAxis(o),
       cornerRadius: o.edgeCornerRadius,
       curvature: o.edgeCurvature ?? 1,
-      portDirection: isDirectionalLayout(o)
-        ? (ROOT_SIDE[o.direction] ?? { x: 0, y: 0 })
-        : { x: 0, y: 0 },
+      portDirection: flowOf(o).rootSide, // where a card's out port sits (Tether knows where the root is)
     };
   }
 
@@ -801,8 +792,12 @@ export class GraphView extends Emitter {
     if (!this.#incoming.get(id)?.length) style.portOut = null;
     if (this.#options.cardConnectors === "arrows")
       style.portIn = style.portOut = null;
+    this.#resolvedStyles.set(id, style);
     return style;
   }
+
+  /** Each node's most recently resolved style (for its edges' ends). */
+  #resolvedStyles = new Map();
 
   #edgeStyle(id) {
     const { data, classes, source, target } = this.#edges.get(id);
@@ -832,14 +827,17 @@ export class GraphView extends Emitter {
   #isCard(id) {
     const node = this.#nodes.get(id);
     if (!node) return false;
-    // Only rules and hooks can change a node's look: without them, the option decides.
+    // Only rules and hooks can change a node's look: without them, the option decides. With them, the node's style
+    // was just resolved (nodes always are before their edges): read it back rather than resolve it again.
     if (
       !this.#classStyles.nodes &&
       !this.#options.nodeStyle &&
       !node.data.style?.look
     )
       return this.#options.nodeLook === "card";
-    return this.#nodeStyle(id).look === "card";
+    return (
+      (this.#resolvedStyles.get(id) ?? this.#nodeStyle(id)).look === "card"
+    );
   }
 
   #indexEdges() {
@@ -1197,7 +1195,7 @@ export class GraphView extends Emitter {
       // Too big to read when fitted: open on the root, near the edge the tree grows away from.
       const zoom = o.smartFitZoom;
       const root = graph.positionOf(rootId);
-      const growth = isDirectionalLayout(o) ? treeDirection(o.direction) : null;
+      const growth = flowOf(o).growth;
       const fractionX = growth === "LR" ? 0.12 : growth === "RL" ? 0.88 : 0.5;
       const fractionY = growth === "TB" ? 0.15 : growth === "BT" ? 0.85 : 0.5;
       view = {

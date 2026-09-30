@@ -3,10 +3,8 @@ import {
   checkField,
   defaultsOf,
   describeSchema,
-  isDirectionalLayout,
-  isHorizontalDirection,
+  flowOf,
   resolve,
-  treeDirection,
 } from "tether/index.js";
 
 /**
@@ -300,8 +298,8 @@ function applyStyle(style, changes, schema, source) {
 /** "auto" puts labels where the layout leaves room: beside horizontal trees, below everything else. */
 export function resolveLabelPosition(o) {
   if (o.labelPosition !== "auto") return o.labelPosition;
-  if (!isDirectionalLayout(o)) return "below";
-  const growth = treeDirection(o.direction);
+  const { directional, growth } = flowOf(o);
+  if (!directional) return "below";
   return growth === "LR" ? "right" : growth === "RL" ? "left" : "below";
 }
 
@@ -314,7 +312,7 @@ export function resolveRouting(o) {
   const builtIn = ["straight", "taxi", "round-taxi", "curved"];
   if (!builtIn.includes(o.edgeRouting)) return o.edgeRouting;
   if (o.edgeRouting === "straight") return "straight";
-  const radial = !isDirectionalLayout(o);
+  const radial = !flowOf(o).directional;
   if (o.edgeRouting === "curved") return radial ? "arc" : "s-curve";
   if (radial) return "arc";
   return o.edgeRouting === "round-taxi" ? "round-taxi" : "taxi";
@@ -322,7 +320,7 @@ export function resolveRouting(o) {
 
 /** The axis a directional layout spreads its levels along. */
 export function resolveFlowAxis(o) {
-  return isHorizontalDirection(o.direction) ? "x" : "y";
+  return flowOf(o).axis ?? "y";
 }
 
 /**
