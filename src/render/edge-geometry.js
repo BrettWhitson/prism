@@ -1,4 +1,9 @@
-import { customArrow, customRouter } from "./plugins.js";
+import {
+  checkArrowName,
+  checkRoutingName,
+  customArrow,
+  customRouter,
+} from "./plugins.js";
 
 /**
  * Edge shapes as line segments, for drawing and for bounds. Pure: no DOM.
@@ -124,6 +129,7 @@ export function edgeRoute(
     );
     return quadratic(start, control, end, 14);
   }
+  checkRoutingName(routing);
   return edgePoints(source, target, routing, flowAxis);
 }
 
@@ -281,7 +287,8 @@ export function arrowTemplate(shape) {
         triangles: quad([0, -0.6], [0.22, -0.6], [0.22, 0.6], [0, 0.6]),
         inset: 0,
       };
-    default: // triangle
+    default: // triangle (and names nothing is registered under)
+      checkArrowName(shape);
       return {
         triangles: [
           [0, 0],

@@ -18,6 +18,8 @@ export {
   THEME_OPTIONS,
   DEFAULT_THEME,
   resolveTheme,
+  NODE_STYLE_SCHEMA,
+  EDGE_STYLE_SCHEMA,
   resolveNodeStyle,
   resolveEdgeStyle,
 } from "./style.js";

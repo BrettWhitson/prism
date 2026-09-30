@@ -676,7 +676,18 @@ export const OPTIONS = Object.freeze(describeSchema(OPTIONS_SCHEMA));
  * @returns {Options}
  */
 export function resolveOptions(patch, options = {}) {
-  return resolve(OPTIONS_SCHEMA, patch, { scope: "Prism options", ...options });
+  const out = resolve(OPTIONS_SCHEMA, patch, {
+    scope: "Prism options",
+    ...options,
+  });
+  // Across fields: the zoom limits must be in order (otherwise the minimum wins everywhere).
+  if (out.minZoom > out.maxZoom) {
+    const message = `Prism options: minZoom (${out.minZoom}) is above maxZoom (${out.maxZoom}); swapping them`;
+    if (options.strict) throw new TypeError(message);
+    (options.warn ?? console.warn)(message);
+    [out.minZoom, out.maxZoom] = [out.maxZoom, out.minZoom];
+  }
+  return out;
 }
 
 /**

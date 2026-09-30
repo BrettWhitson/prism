@@ -1,4 +1,5 @@
 import {
+  checkField,
   defaultsOf,
   describeSchema,
   isDirectionalLayout,
@@ -140,23 +141,87 @@ export function resolveTheme(patch, options = {}) {
  * @typedef {{ nodes?: Record<string, NodeRule>, edges?: Record<string, EdgeRule> }} ClassRules
  */
 
-/** Style fields that can be null ("none"); null elsewhere is ignored, like undefined. */
-const NULLABLE = new Set([
-  "aura",
-  "ring",
-  "pattern",
-  "arrowAtSource",
-  "arrowAtTarget",
-]);
+/** @returns {import('tether/index.js').Field} */
+const field = (type, extra = {}) => ({ type, default: undefined, ...extra });
 
-/** Copy the fields of `changes` that `style` has onto it (unknown fields are ignored). */
-function applyStyle(style, changes) {
+/**
+ * What each style field may be, for checking class rules, an element's own `style` and the hooks. No defaults: a
+ * value that can't be used is left out (the style keeps what it had), and a number out of range is clamped.
+ */
+export const NODE_STYLE_SCHEMA = Object.freeze({
+  size: field("number", { min: 0, max: 100000 }),
+  shape: field("string"),
+  fill: field("color"),
+  fillAlpha: field("number", { min: 0, max: 1 }),
+  border: field("color"),
+  borderWidth: field("number", { min: 0, max: 1000 }),
+  pattern: field("enum", { values: ["solid", "dashed", "dotted", "stack"] }),
+  iconAlpha: field("number", { min: 0, max: 1 }),
+  aura: field("color", { nullable: true }),
+  ring: field("color", { nullable: true }),
+  badge: field("boolean"),
+  label: field("string"),
+  fontSize: field("number", { min: 0, max: 1000 }),
+  bold: field("boolean"),
+  labelPriority: field("number"),
+  events: field("boolean"),
+  icon: field("string", { nullable: true }),
+});
+
+export const EDGE_STYLE_SCHEMA = Object.freeze({
+  color: field("color"),
+  width: field("number", { min: 0, max: 1000 }),
+  alpha: field("number", { min: 0, max: 1 }),
+  pattern: field("enum", { values: ["dashed", "dotted"], nullable: true }),
+  arrowAtSource: field("string", { nullable: true }),
+  arrowAtTarget: field("string", { nullable: true }),
+  arrowScale: field("number", { min: 0, max: 100 }),
+  label: field("string"),
+  fontSize: field("number", { min: 0, max: 1000 }),
+  glow: field("boolean"),
+});
+
+const warned = new Set();
+function warnStyle(message) {
+  if (warned.has(message)) return;
+  warned.add(message);
+  console.warn(message);
+}
+
+function describe(value) {
+  if (typeof value === "function") return "a function";
+  const text = JSON.stringify(value) ?? String(value);
+  return text.length > 40 ? `${text.slice(0, 37)}…` : text;
+}
+
+/**
+ * Copy `changes` onto `style`, checked against `schema`: unknown fields and unusable values are left out, numbers out
+ * of range clamped, each problem warned about once (per source, field and problem). null clears the fields that can
+ * be "none" (aura, ring, an edge's pattern and arrowheads) and is ignored elsewhere.
+ * @param {string} source  where the changes came from, for the warning
+ */
+function applyStyle(style, changes, schema, source) {
   if (!changes || typeof changes !== "object") return;
   for (const key of Object.keys(changes)) {
     const value = changes[key];
-    if (!(key in style) || value === undefined) continue;
-    if (value === null && !NULLABLE.has(key)) continue;
-    style[key] = value;
+    if (value === undefined) continue;
+    const rule = schema[key];
+    if (!rule) {
+      warnStyle(`Prism: ${source}: unknown style field "${key}" (ignored)`);
+      continue;
+    }
+    if (value === null) {
+      if (rule.nullable) style[key] = null;
+      continue;
+    }
+    const checked = checkField(rule, value);
+    if (checked.problem) {
+      warnStyle(
+        `Prism: ${source}: "${key}" ${checked.problem}; got ${describe(value)}, ${checked.value === undefined ? "ignored" : `using ${describe(checked.value)}`}`,
+      );
+      if (checked.value === undefined) continue;
+    }
+    style[key] = checked.value;
   }
 }
 
@@ -226,10 +291,16 @@ export function resolveNodeStyle(classes, data, o, theme, rules = {}) {
   }
   if (classes.has("collapsed")) style.pattern = "stack";
   for (const [name, rule] of Object.entries(rules.nodes ?? {}))
-    if (classes.has(name)) applyStyle(style, rule);
-  applyStyle(style, data.style);
+    if (classes.has(name))
+      applyStyle(style, rule, NODE_STYLE_SCHEMA, `node class "${name}"`);
+  applyStyle(style, data.style, NODE_STYLE_SCHEMA, "a node's style");
   if (o.nodeStyle)
-    applyStyle(style, o.nodeStyle(/** @type {any} */ (data), style));
+    applyStyle(
+      style,
+      o.nodeStyle(/** @type {any} */ (data), style),
+      NODE_STYLE_SCHEMA,
+      "the nodeStyle hook",
+    );
   return style;
 }
 
@@ -266,9 +337,15 @@ export function resolveEdgeStyle(classes, data, o, theme, rules = {}) {
     glow: false,
   };
   for (const [name, rule] of Object.entries(rules.edges ?? {}))
-    if (classes.has(name)) applyStyle(style, rule);
-  applyStyle(style, data.style);
+    if (classes.has(name))
+      applyStyle(style, rule, EDGE_STYLE_SCHEMA, `edge class "${name}"`);
+  applyStyle(style, data.style, EDGE_STYLE_SCHEMA, "an edge's style");
   if (o.edgeStyle)
-    applyStyle(style, o.edgeStyle(/** @type {any} */ (data), style));
+    applyStyle(
+      style,
+      o.edgeStyle(/** @type {any} */ (data), style),
+      EDGE_STYLE_SCHEMA,
+      "the edgeStyle hook",
+    );
   return style;
 }

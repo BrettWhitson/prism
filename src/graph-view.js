@@ -5,6 +5,7 @@ import {
   isDirectionalLayout,
   runLayout,
   treeDirection,
+  uniqueById,
 } from "tether/index.js";
 import { WebGLGraph } from "./render/webgl-graph.js";
 import { planTransition } from "./render/transition-plan.js";
@@ -292,6 +293,12 @@ export class GraphView extends Emitter {
    */
   render({ nodes, edges, fit = false, anchorNodeId = null, grow = false }) {
     const started = performance.now();
+    // Ids are unique: the first of each is kept (with a warning). An edge's id is its `id`, or "source->target".
+    nodes = uniqueById(nodes, "Prism: render() nodes");
+    edges = uniqueById(
+      edges.map((edge) => ({ ...edge, id: edgeId(edge) })),
+      "Prism: render() edges (give parallel edges their own ids)",
+    );
     const o = this.#options;
     const graph = this.graph;
     this.#clearTimers();

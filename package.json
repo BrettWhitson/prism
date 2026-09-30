@@ -40,7 +40,7 @@
     "typescript": "7.0.2"
   },
   "dependencies": {
-    "tether": "github:BrettWhitson/tether#d53485b67491be00e84b2150ea0dbaf46295d10b"
+    "tether": "github:BrettWhitson/tether#25fa885b2508545bf10aa09f682276d8375ff9f0"
   },
   "types": "./types/index.d.ts",
   "files": [

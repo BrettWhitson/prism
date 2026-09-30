@@ -31,7 +31,12 @@ import {
   NODE_VERTEX,
   nodeFragmentSource,
 } from "./shaders.js";
-import { customShapeGlsl, glslShapeNames, pluginVersion } from "./plugins.js";
+import {
+  customShapeGlsl,
+  disableShape,
+  glslShapeNames,
+  pluginVersion,
+} from "./plugins.js";
 
 /**
  * Prism's renderer. This is its engine: WebGL2 draws every node, edge and arrowhead in a handful of instanced calls, a
@@ -1064,6 +1069,7 @@ export class WebGLGraph {
         }),
       );
       if (!broken.size) throw error;
+      for (const name of broken) disableShape(name); // reported once: later shaders leave it out
       console.warn(
         `Prism: node shape${broken.size > 1 ? "s" : ""} ${[...broken].map((n) => `"${n}"`).join(", ")} didn't compile and ${broken.size > 1 ? "are" : "is"} drawn as the default shape:
 ${error.message}`,

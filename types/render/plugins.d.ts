@@ -37,10 +37,15 @@ export declare function registerNodeShape(
         glsl: string;
       },
 ): void;
-/** The shader id of a shape name (unknown names: the round rectangle). */
+/** The shader id of a shape name (unknown names: the round rectangle, with a warning). */
 export declare function shapeId(name: any): any;
-/** Every shape name, built-in and custom. */
+/** Every shape name that draws: built-in, and custom ones that compiled (or haven't been tried yet). */
 export declare function nodeShapeNames(): string[];
+/**
+ * A custom shape didn't compile (the renderer found out): leave it out of every shader from now on, so the failure
+ * is reported once, not on every recompile. It's drawn as the default shape until it's registered again.
+ */
+export declare function disableShape(name: any): void;
 /**
  * The custom shapes as GLSL: their functions, and the dispatch for shapeDistance (see shaders.js). `skip`: names to
  * leave out (they failed to compile).
@@ -49,7 +54,7 @@ export declare function customShapeGlsl(skip?: Set<any>): {
   functions: string;
   dispatch: string;
 };
-/** The names of the custom shapes written in GLSL (the ones that might not compile). */
+/** The custom shapes still in the shader (the ones that might not compile). */
 export declare function glslShapeNames(): string[];
 /**
  * Add an arrowhead (or replace one, built-ins included), usable as `arrowShape`. `triangles`: a flat list of
@@ -73,6 +78,8 @@ export declare function customArrow(name: any): {
   triangles: [number, number][];
   inset: number;
 };
+/** An arrowhead name neither built in nor registered: warn once (the triangle is drawn). */
+export declare function checkArrowName(name: any): void;
 export type EdgeRouter = (
   source: {
     x: number;
@@ -108,6 +115,8 @@ export declare function registerEdgeRouting(
 /** @returns {EdgeRouter | undefined} */
 export declare function customRouter(name: any): EdgeRouter | undefined;
 export declare function edgeRoutingNames(): string[];
+/** A routing neither built in nor registered: warn once (a straight line is drawn). */
+export declare function checkRoutingName(name: any): void;
 /**
  * Add an animation feel (or replace one), usable as `animationEasing`. Every motion is a spring that settles in
  * about the animation duration: `speed` sets how quickly it gets going (higher is snappier), `damping` whether it
@@ -125,7 +134,7 @@ export declare function registerEasing(
     damping: number;
   },
 ): void;
-/** @returns {{ speed: number, damping: number }} (unknown names: smooth) */
+/** @returns {{ speed: number, damping: number }} (unknown names: smooth, with a warning) */
 export declare function easing(name: any): {
   speed: number;
   damping: number;

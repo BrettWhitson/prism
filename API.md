@@ -65,6 +65,10 @@ nearest surviving ancestor, removed ones fold into theirs. Tether lays it out fi
 - `anchorNodeId`: keep this node where it is on screen.
 - `grow`: a brand-new graph that grows out of its root level by level.
 
+Ids must be unique: of nodes (or edges) sharing an id, the first is kept and the rest dropped, with a warning. An
+edge's id is its `id`, or `"source->target"`, so give parallel edges their own ids. A custom layout that throws falls
+back to the tree with a warning, so `render()` doesn't throw for it.
+
 `updateInPlace(nodeUpdates, edgeUpdates?)` changes labels, colours, classes and styles without a new layout (each
 update has its `id`). `clear()` removes everything. `nodeIds()`, `hasNode(id)` and `rootNodeId` describe what's
 drawn.
@@ -78,7 +82,8 @@ from the next `render()`.
 Values are checked against `OPTIONS_SCHEMA`: numbers out of range are clamped, wrong types and unknown choices fall
 back to the default, unknown keys are ignored ("did you mean" for typos), each with one `console.warn`, or a
 `TypeError` with `strict: true`. Choices marked "or registered" also accept anything added with a
-[plugin](#plugins). `OPTIONS` lists every option (`{ key, type, default, min, max, step, values, label, group, hint }`)
+[plugin](#plugins). `minZoom` and `maxZoom` given out of order are swapped, with a warning.
+`OPTIONS` lists every option (`{ key, type, default, min, max, step, values, label, group, hint }`)
 for building a settings UI, and `resolveOptions(patch)` checks options without a view.
 
 The layout and physics options are Tether's settings: `layout`, `direction`, `layered`, `physicsMode`,
@@ -259,6 +264,10 @@ view.setOptions({
 | `label`, `fontSize` | the label |
 | `glow` | a soft glow under the line |
 
+Every step's values are checked (`NODE_STYLE_SCHEMA`, `EDGE_STYLE_SCHEMA`): numbers out of range are clamped, and
+unknown fields and unusable values (a malformed colour, an unknown pattern) are left out, each with one warning per
+source. `null` clears `aura`, `ring`, an edge's `pattern` and its arrowheads, and is ignored elsewhere.
+
 `resolveNodeStyle` and `resolveEdgeStyle` run the pipeline on their own, for tests and tools.
 
 ## Events
@@ -340,7 +349,8 @@ here), then chosen with the `layout` and `forces` options.
 
 ## Plugins
 
-Each registry is global and live: registering while views are drawing takes effect on their next frame.
+Each registry is global and live: registering while views are drawing takes effect on their next frame. A shape,
+arrowhead, routing or easing name nothing is registered under (yet) draws the default, with one warning per name.
 
 ### `registerNodeShape(name, definition)`
 
@@ -357,7 +367,8 @@ registerNodeShape("pill", {
 });
 ```
 
-A GLSL shape that doesn't compile is drawn as the default shape, with a warning naming it; the others keep working.
+A GLSL shape that doesn't compile is drawn as the default shape, with one warning naming it; the others keep working.
+It's left out of every later shader and of `nodeShapeNames()` until it's registered again.
 Built-in names can't be replaced. `nodeShapeNames()` lists them all.
 
 ### `registerArrowShape(name, { triangles, inset? })`

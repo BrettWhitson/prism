@@ -28,9 +28,23 @@ const FIRST_CUSTOM_SHAPE = 6;
 /** How many vertices a polygon shape may have (a fixed-size array in the shader). */
 export const MAX_POLYGON_VERTICES = 64;
 
-/** @type {Map<string, { id: number, glsl: string }>} */
+/** @type {Map<string, { id: number, glsl: string, broken?: boolean }>} */
 const customShapes = new Map();
 let version = 0;
+
+const warned = new Set();
+/**
+ * A name nothing is registered under, used somewhere: warn once per kind and name (it may be registered later, so it
+ * isn't an error; until then the fallback is drawn).
+ */
+function warnUnknown(kind, name, fallback) {
+  const key = `${kind}\u0000${name}`;
+  if (warned.has(key)) return;
+  warned.add(key);
+  console.warn(
+    `Prism: unknown ${kind} ${JSON.stringify(name)} (not registered); drawing ${fallback}`,
+  );
+}
 
 /** Changes whenever anything is registered: renderers compare it to what they last built. */
 export function pluginVersion() {
@@ -67,6 +81,7 @@ export function registerNodeShape(name, definition) {
       `registerNodeShape("${name}"): give a polygon ([[x, y], …]) or a glsl function body`,
     );
   customShapes.set(name, { id, glsl });
+  warned.delete(`node shape\u0000${name}`);
   version++;
 }
 
@@ -114,14 +129,32 @@ function glslFloat(value) {
   return /[.e]/.test(text) ? text : `${text}.0`;
 }
 
-/** The shader id of a shape name (unknown names: the round rectangle). */
+/** The shader id of a shape name (unknown names: the round rectangle, with a warning). */
 export function shapeId(name) {
-  return BUILT_IN_SHAPES[name] ?? customShapes.get(name)?.id ?? 1;
+  const id = BUILT_IN_SHAPES[name] ?? customShapes.get(name)?.id;
+  if (id != null) return id;
+  if (name != null && name !== "")
+    warnUnknown("node shape", name, "round-rectangle");
+  return 1;
 }
 
-/** Every shape name, built-in and custom. */
+/** Every shape name that draws: built-in, and custom ones that compiled (or haven't been tried yet). */
 export function nodeShapeNames() {
-  return [...Object.keys(BUILT_IN_SHAPES), ...customShapes.keys()];
+  return [
+    ...Object.keys(BUILT_IN_SHAPES),
+    ...[...customShapes]
+      .filter(([, shape]) => !shape.broken)
+      .map(([name]) => name),
+  ];
+}
+
+/**
+ * A custom shape didn't compile (the renderer found out): leave it out of every shader from now on, so the failure
+ * is reported once, not on every recompile. It's drawn as the default shape until it's registered again.
+ */
+export function disableShape(name) {
+  const shape = customShapes.get(name);
+  if (shape) shape.broken = true;
 }
 
 /**
@@ -131,17 +164,19 @@ export function nodeShapeNames() {
 export function customShapeGlsl(skip = new Set()) {
   let functions = "",
     dispatch = "";
-  for (const [name, { id, glsl }] of customShapes) {
-    if (skip.has(name)) continue;
+  for (const [name, { id, glsl, broken }] of customShapes) {
+    if (broken || skip.has(name)) continue;
     functions += `float customShape${id}(vec2 p, vec2 h) {\n${glsl}\n}\n`;
     dispatch += `  if (abs(id - ${id}.0) < 0.5) return customShape${id}(q, h);\n`;
   }
   return { functions, dispatch };
 }
 
-/** The names of the custom shapes written in GLSL (the ones that might not compile). */
+/** The custom shapes still in the shader (the ones that might not compile). */
 export function glslShapeNames() {
-  return [...customShapes.keys()];
+  return [...customShapes]
+    .filter(([, shape]) => !shape.broken)
+    .map(([name]) => name);
 }
 
 // ---------------------------------------------------------------- arrowheads
@@ -187,6 +222,22 @@ export function customArrow(name) {
   return arrowShapes.get(name);
 }
 
+const BUILT_IN_ARROWS = new Set([
+  "triangle",
+  "vee",
+  "chevron",
+  "triangle-backcurve",
+  "circle",
+  "square",
+  "tee",
+]);
+
+/** An arrowhead name neither built in nor registered: warn once (the triangle is drawn). */
+export function checkArrowName(name) {
+  if (name && !BUILT_IN_ARROWS.has(name) && !arrowShapes.has(name))
+    warnUnknown("arrowhead", name, "triangle");
+}
+
 // ---------------------------------------------------------------- edge routings
 
 /**
@@ -227,6 +278,20 @@ export function edgeRoutingNames() {
   return [...routers.keys()];
 }
 
+const BUILT_IN_ROUTINGS = new Set([
+  "straight",
+  "taxi",
+  "round-taxi",
+  "s-curve",
+  "arc",
+]);
+
+/** A routing neither built in nor registered: warn once (a straight line is drawn). */
+export function checkRoutingName(name) {
+  if (name && !BUILT_IN_ROUTINGS.has(name) && !routers.has(name))
+    warnUnknown("edge routing", name, "straight lines");
+}
+
 // ---------------------------------------------------------------- animation feels
 
 /** Spring shapes: omega = speed / seconds, zeta = damping (1: no overshoot; below 1 bounces; above 1 glides). */
@@ -258,9 +323,12 @@ export function registerEasing(
   version++;
 }
 
-/** @returns {{ speed: number, damping: number }} (unknown names: smooth) */
+/** @returns {{ speed: number, damping: number }} (unknown names: smooth, with a warning) */
 export function easing(name) {
-  return easings.get(name) ?? easings.get("smooth");
+  const feel = easings.get(name);
+  if (feel) return feel;
+  if (name != null && name !== "") warnUnknown("easing", name, "smooth");
+  return easings.get("smooth");
 }
 
 export function easingNames() {

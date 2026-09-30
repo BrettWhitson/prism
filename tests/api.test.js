@@ -21,6 +21,8 @@ import {
 } from "../src/index.js";
 import {
   customShapeGlsl,
+  disableShape,
+  glslShapeNames,
   pluginVersion,
   shapeId,
 } from "../src/render/plugins.js";
@@ -276,4 +278,115 @@ test("custom arrowheads replace the template; routings and easings are used by n
     () => registerEasing("x", { speed: 0, damping: 1 }),
     /positive/,
   );
+});
+
+test("style values are checked: clamped, or left out with one warning per source and problem", () => {
+  const o = resolveOptions({});
+  const { result, warnings } = capture(() => {
+    const out = [];
+    for (let k = 0; k < 3; k++)
+      out.push(
+        resolveNodeStyle(
+          new Set(["bad"]),
+          { style: { size: -5, border: "nope", pattern: "zigzag", sizee: 3 } },
+          o,
+          DEFAULT_THEME,
+          { nodes: { bad: { fillAlpha: 7, aura: "rgb(1,2)" } } },
+        ),
+      );
+    return out;
+  });
+  const style = result[0];
+  assert.equal(style.size, 0); // clamped
+  assert.equal(style.border, DEFAULT_THEME.node); // left as it was
+  assert.equal(style.pattern, "solid");
+  assert.equal(style.fillAlpha, 1);
+  assert.equal(style.aura, null);
+  assert.equal(warnings.length, 6); // once each, not per node
+  assert.match(
+    warnings.join("\n"),
+    /a node's style: "border" expected a CSS colour/,
+  );
+  assert.match(
+    warnings.join("\n"),
+    /node class "bad": "fillAlpha" out of range/,
+  );
+  assert.match(warnings.join("\n"), /unknown style field "sizee"/);
+  const hooked = capture(() =>
+    resolveEdgeStyle(
+      new Set(),
+      {},
+      resolveOptions({ edgeStyle: () => ({ width: "wide", pattern: null }) }),
+      DEFAULT_THEME,
+    ),
+  );
+  assert.equal(hooked.result.width, resolveOptions({}).edgeWidth);
+  assert.equal(hooked.result.pattern, null);
+  assert.match(
+    hooked.warnings.join(),
+    /the edgeStyle hook: "width" expected a number/,
+  );
+});
+
+test("zoom limits out of order are swapped, with a warning (strict: thrown)", () => {
+  const { result, warnings } = capture(() =>
+    resolveOptions({ minZoom: 0.9, maxZoom: 0.2 }),
+  );
+  assert.equal(result.minZoom, 0.2);
+  assert.equal(result.maxZoom, 0.9);
+  assert.match(warnings.join(), /minZoom \(0\.9\) is above maxZoom \(0\.2\)/);
+  assert.throws(
+    () => resolveOptions({ minZoom: 0.9, maxZoom: 0.2 }, { strict: true }),
+    /swapping/,
+  );
+});
+
+test("names nothing is registered under draw the fallback, with one warning each", () => {
+  const { warnings } = capture(() => {
+    for (let k = 0; k < 3; k++) {
+      assert.equal(shapeId("test-blob"), 1);
+      arrowTemplate("test-arrowless");
+      edgeRoute(
+        { x: 0, y: 0, hw: 5, hh: 5 },
+        { x: 50, y: 50, hw: 5, hh: 5 },
+        { routing: "test-wiggle" },
+      );
+      springFor(300, "test-wobbly");
+    }
+    shapeId(undefined);
+    arrowTemplate("vee");
+    edgeRoute(
+      { x: 0, y: 0, hw: 5, hh: 5 },
+      { x: 50, y: 50, hw: 5, hh: 5 },
+      { routing: "arc" },
+    );
+  });
+  assert.equal(warnings.length, 4);
+  assert.match(
+    warnings.join("\n"),
+    /unknown node shape "test-blob" \(not registered\); drawing round-rectangle/,
+  );
+  assert.match(warnings.join("\n"), /unknown arrowhead "test-arrowless"/);
+  assert.match(warnings.join("\n"), /unknown edge routing "test-wiggle"/);
+  assert.match(warnings.join("\n"), /unknown easing "test-wobbly"/);
+  // Registered later: no longer unknown.
+  registerNodeShape("test-blob", { glsl: "return length(p) - h.x;" });
+  assert.notEqual(shapeId("test-blob"), 1);
+});
+
+test("a shape that didn't compile is left out of later shaders and the shape list, until registered again", () => {
+  registerNodeShape("test-broken", { glsl: "return nonsense(p);" });
+  const id = shapeId("test-broken");
+  assert.ok(
+    nodeFragmentSource(customShapeGlsl()).includes(`customShape${id}(`),
+  );
+  disableShape("test-broken");
+  assert.ok(
+    !nodeFragmentSource(customShapeGlsl()).includes(`customShape${id}(`),
+  );
+  assert.ok(!nodeShapeNames().includes("test-broken"));
+  assert.ok(!glslShapeNames().includes("test-broken"));
+  assert.equal(shapeId("test-broken"), id); // drawn as the default by the shader, without a second warning
+  registerNodeShape("test-broken", { glsl: "return length(p) - h.x;" });
+  assert.ok(nodeShapeNames().includes("test-broken"));
 });

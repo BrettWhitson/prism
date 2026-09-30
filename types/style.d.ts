@@ -123,6 +123,41 @@ export type ClassRules = {
   nodes?: Record<string, NodeRule>;
   edges?: Record<string, EdgeRule>;
 };
+/**
+ * What each style field may be, for checking class rules, an element's own `style` and the hooks. No defaults: a
+ * value that can't be used is left out (the style keeps what it had), and a number out of range is clamped.
+ */
+export declare const NODE_STYLE_SCHEMA: Readonly<{
+  size: import("tether/schema.js").Field;
+  shape: import("tether/schema.js").Field;
+  fill: import("tether/schema.js").Field;
+  fillAlpha: import("tether/schema.js").Field;
+  border: import("tether/schema.js").Field;
+  borderWidth: import("tether/schema.js").Field;
+  pattern: import("tether/schema.js").Field;
+  iconAlpha: import("tether/schema.js").Field;
+  aura: import("tether/schema.js").Field;
+  ring: import("tether/schema.js").Field;
+  badge: import("tether/schema.js").Field;
+  label: import("tether/schema.js").Field;
+  fontSize: import("tether/schema.js").Field;
+  bold: import("tether/schema.js").Field;
+  labelPriority: import("tether/schema.js").Field;
+  events: import("tether/schema.js").Field;
+  icon: import("tether/schema.js").Field;
+}>;
+export declare const EDGE_STYLE_SCHEMA: Readonly<{
+  color: import("tether/schema.js").Field;
+  width: import("tether/schema.js").Field;
+  alpha: import("tether/schema.js").Field;
+  pattern: import("tether/schema.js").Field;
+  arrowAtSource: import("tether/schema.js").Field;
+  arrowAtTarget: import("tether/schema.js").Field;
+  arrowScale: import("tether/schema.js").Field;
+  label: import("tether/schema.js").Field;
+  fontSize: import("tether/schema.js").Field;
+  glow: import("tether/schema.js").Field;
+}>;
 /** "auto" puts labels where the layout leaves room: beside horizontal trees, below everything else. */
 export declare function resolveLabelPosition(o: any): any;
 /**
