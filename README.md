@@ -8,21 +8,31 @@ Prism doesn't position anything itself. [Tether](https://github.com/BrettWhitson
 all the physics: the layouts, the forces, and how the graph moves when a node is dragged. Prism hands Tether the
 graph and the pointer's moves, and draws the positions Tether returns.
 
-No build step: plain ES modules.
+- **Fully customizable:** every option (about 80), theme colour and physics constant is described by a schema
+  (type, range, default, label, hint) and checked. Bad values are clamped or defaulted with a warning, or throw in
+  strict mode. The schemas can build a settings UI; the demo's panel is built that way.
+- **Styling in steps:** options and theme, then class rules, then each node's own `style`, then a `nodeStyle` hook.
+  Every step can change any style field.
+- **Events:** `view.on("nodeTap", …)` returns its own unsubscribe. There are 18 events, from taps and drags to
+  physics settling and option changes.
+- **Plugins:** custom node shapes (a polygon, or a GLSL distance function compiled into the shader), arrowheads,
+  edge routings and animation feels, plus Tether's custom layouts and forces.
+- **Typed:** plain ES modules with no build step, and TypeScript declarations in `types/`.
 
 ```js
 import { GraphView } from "prism";
 
 const view = new GraphView({
   container: document.getElementById("graph"),
-  // Layout and physics options are passed through to Tether.
-  options: { direction: "LR", physicsMode: "floating" },
-  handlers: {
-    onNodeTap: (id) => view.select(id),
-    onNodeHoverStart: (id) => view.showLineage(id),
-    onNodeHoverEnd: () => view.clearLineage(),
-  },
+  // Layout and physics options go to Tether.
+  options: { direction: "LR", physicsMode: "floating", edgeRouting: "round-taxi" },
+  theme: { edge: "#44506a" },
+  classStyles: { nodes: { important: { ring: "#ffd166", shape: "hexagon" } } },
 });
+
+view.on("nodeTap", ({ id }) => view.select(id));
+view.on("nodeHoverStart", ({ id }) => view.showLineage(id));
+view.on("nodeHoverEnd", () => view.clearLineage());
 
 view.render({
   nodes: [
@@ -32,12 +42,11 @@ view.render({
   edges: [{ source: "a", target: "b", label: "2" }],
   fit: true,
 });
-
-// Your own classes, in Prism's visual language: aura, ring, badge, pattern, border…
-view.setClassStyles({ nodes: { important: { ring: "#ffd166" } } });
 ```
 
 Edges run parent → child, from the root outward. The root is the node with `root: true`, or else the first one.
+
+The full reference is in [API.md](API.md), including using a view from a Svelte component.
 
 In a browser without a bundler, map the imports:
 
@@ -56,15 +65,21 @@ In a browser without a bundler, map the imports:
 
 | Where | What |
 | --- | --- |
-| `src/graph-view.js` | `GraphView`: the engine's API. Calls Tether to lay out and to move nodes, and the renderer to draw. |
-| `src/options.js` | every option and its default |
-| `src/style.js` | options + theme + classes → what each node and edge looks like; `DEFAULT_THEME` |
+| `src/index.js` | the public API (Tether's included): import everything from here |
+| `src/graph-view.js` | `GraphView`: calls Tether to lay out and to move nodes, and the renderer to draw; emits the events |
+| `src/options.js` | the options schema: every option, its range and its default |
+| `src/style.js` | the theme schema, and options + theme + classes + hooks → what each node and edge looks like |
 | `src/render/` | the WebGL2 renderer (`WebGLGraph`): instanced nodes, edges and arrowheads, canvas labels, and springs that animate every visual change. It imports nothing from the rest of Prism (a test checks), so it can be used, or split out, on its own. |
+| `src/render/plugins.js` | the shape, arrowhead, routing and easing registries |
 
 ## Development
 
 ```sh
 npm install      # fetches Tether from GitHub
-npm run demo     # http://localhost:8650/demo/
-npm run verify   # lint, prettier, tests
+npm run demo     # http://localhost:8650/demo/: every option, colour and constant, live
+npm run verify   # lint, prettier, type check, declarations and docs up to date, tests
+npm run types    # regenerate types/ after changing a JSDoc type
+npm run docs     # regenerate API.md's tables after changing a schema
 ```
+
+To work on Prism and Tether together, point Prism at your Tether checkout: `npm install --no-save ../tether`.

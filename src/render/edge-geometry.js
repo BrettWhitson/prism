@@ -1,3 +1,5 @@
+import { customArrow, customRouter } from "./plugins.js";
+
 /**
  * Edge shapes as line segments, for drawing and for bounds. Pure: no DOM.
  *
@@ -21,8 +23,8 @@ export function boxExit(cx, cy, hw, hh, tx, ty) {
 
 /**
  * The points of an edge from `source` to `target` (each `{ x, y, hw, hh }`), as a polyline.
- * @param {"straight" | "taxi"} routing
- * @param {"x" | "y"} flowAxis  for taxi: the axis levels are spread along
+ * @param {string} routing  "straight" or "taxi"
+ * @param {string} flowAxis  for taxi: "x" or "y", the axis levels are spread along
  * @returns {{ x: number, y: number }[]}
  */
 export function edgePoints(
@@ -73,6 +75,16 @@ export function edgeRoute(
     curvature = 1,
   } = {},
 ) {
+  const custom = customRouter(routing);
+  if (custom) {
+    const points = custom(source, target, {
+      flowAxis,
+      cornerRadius,
+      curvature,
+    });
+    if (Array.isArray(points) && points.length >= 2) return points;
+    return edgePoints(source, target, "straight");
+  }
   if (routing === "round-taxi")
     return roundCorners(
       edgePoints(source, target, "taxi", flowAxis),
@@ -210,6 +222,8 @@ export function pointAlong(points, distance) {
  * @returns {{ triangles: [number, number][], inset: number }}
  */
 export function arrowTemplate(shape) {
+  const custom = customArrow(shape);
+  if (custom) return custom;
   const quad = (a, b, c, d) => [a, b, c, a, c, d];
   switch (shape) {
     case "vee":

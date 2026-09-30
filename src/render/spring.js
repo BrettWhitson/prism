@@ -4,26 +4,21 @@
  * drags and rapid clicks feel continuous. Pure: no DOM.
  */
 
+import { easing } from "./plugins.js";
+
 /**
  * Spring constants for an animation that should settle in about `durationMs`, in the given feel:
  *  - smooth: critically damped (no overshoot);
  *  - snappy: critically damped, quicker off the mark;
  *  - bouncy: underdamped, overshoots once and settles;
- *  - linear: heavily damped, an even glide.
+ *  - linear: heavily damped, an even glide;
+ *  - or any feel added with registerEasing (plugins.js).
  * @returns {{ omega: number, zeta: number }}  angular frequency (1/s) and damping ratio
  */
 export function springFor(durationMs, feel = "smooth") {
   const seconds = Math.max(0.05, durationMs / 1000);
-  switch (feel) {
-    case "snappy":
-      return { omega: 9 / seconds, zeta: 1 };
-    case "bouncy":
-      return { omega: 7 / seconds, zeta: 0.5 };
-    case "linear":
-      return { omega: 9 / seconds, zeta: 1.6 };
-    default:
-      return { omega: 6.6 / seconds, zeta: 1 };
-  }
+  const { speed, damping } = easing(feel);
+  return { omega: speed / seconds, zeta: damping };
 }
 
 /**

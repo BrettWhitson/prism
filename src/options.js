@@ -1,95 +1,690 @@
+import {
+  SETTINGS_SCHEMA,
+  defaultsOf,
+  describeSchema,
+  resolve,
+} from "tether/index.js";
+
 /**
- * Everything a GraphView can be told, with its defaults. Pass any subset to the constructor or to setOptions();
- * layout and physics options (direction, layered, physicsMode and the forces) take effect on the next render().
+ * Everything a GraphView can be told, as one schema: type, range, default, label and hint for each option. Pass any
+ * subset to the constructor or to setOptions(); they're checked (bad values are clamped or replaced by the default,
+ * with a warning, or throw with `strict: true`). Layout and physics options (Tether's settings: layout, direction,
+ * layered, physicsMode, the forces) take effect on the next render(); everything else at once.
+ *
+ * OPTIONS (the list, for settings UIs) and DEFAULT_OPTIONS come from this schema.
  */
-export const DEFAULT_OPTIONS = {
-  // ---------------------------------------------------------------- layout (Tether)
-  /** Which way the graph flows, leaves → root: "TB", "BT", "LR", "RL", or "radial" (the root in the centre). */
-  direction: "BT",
-  /** Always use the layered layout (for graphs with shared nodes); otherwise a tidy tree when the graph is one. */
-  layered: false,
-  /** "elastic": the layout holds and a dragged node pulls its neighbours; "floating": the whole graph is live. */
-  physicsMode: "elastic",
-  linkForce: 0.5,
-  centerForce: 0.2,
-  repelForce: 8,
-  linkDistance: 120,
+
+/** @returns {import('tether/index.js').Field} */
+const number = (group, label, value, min, max, step, hint) => ({
+  type: "number",
+  group,
+  label,
+  default: value,
+  min,
+  max,
+  step,
+  hint,
+});
+/** @returns {import('tether/index.js').Field} */
+const integer = (group, label, value, min, max, step, hint) => ({
+  ...number(group, label, value, min, max, step, hint),
+  type: "integer",
+});
+/** @returns {import('tether/index.js').Field} */
+const boolean = (group, label, value, hint) => ({
+  type: "boolean",
+  group,
+  label,
+  default: value,
+  hint,
+});
+/** @returns {import('tether/index.js').Field} */
+const choice = (group, label, value, values, hint, open = false) => ({
+  type: "enum",
+  group,
+  label,
+  default: value,
+  values,
+  open,
+  hint,
+});
+
+/** @type {Readonly<import('tether/index.js').Schema>} */
+export const OPTIONS_SCHEMA = Object.freeze({
+  // ---------------------------------------------------------------- layout and physics (Tether)
+  ...SETTINGS_SCHEMA,
 
   // ---------------------------------------------------------------- nodes
-  nodeSizeScale: 1,
-  /** The root is this much bigger than other nodes. */
-  rootSizeScale: 1.35,
-  /** "round-rectangle", "rectangle", "ellipse", "diamond", "hexagon"… (see render/shaders.js) */
-  nodeShape: "round-rectangle",
-  /** Fill nodes with a tint of their colour instead of the theme's node fill. */
-  tintNodeFill: false,
-  nodeBorderWidth: 3,
-  showIcons: true,
+  nodeSize: number(
+    "Nodes",
+    "Node size",
+    48,
+    4,
+    400,
+    1,
+    "Base width and height of a node, in graph units (before nodeSizeScale).",
+  ),
+  nodeSizeScale: number(
+    "Nodes",
+    "Node size ×",
+    1,
+    0.2,
+    4,
+    0.05,
+    "Multiplies every node's size.",
+  ),
+  rootSizeScale: number(
+    "Nodes",
+    "Root size ×",
+    1.35,
+    0.5,
+    4,
+    0.05,
+    "The root is this much bigger than other nodes.",
+  ),
+  nodeShape: choice(
+    "Nodes",
+    "Shape",
+    "round-rectangle",
+    [
+      "round-rectangle",
+      "rectangle",
+      "ellipse",
+      "hexagon",
+      "octagon",
+      "diamond",
+      "round-diamond",
+    ],
+    "A built-in shape, or one added with registerNodeShape().",
+    true,
+  ),
+  tintNodeFill: boolean(
+    "Nodes",
+    "Tinted fill",
+    false,
+    "Fill nodes with a tint of their colour instead of the theme's node fill.",
+  ),
+  tintFillAlpha: number(
+    "Nodes",
+    "Tint strength",
+    0.3,
+    0,
+    1,
+    0.01,
+    "How opaque the tinted fill is.",
+  ),
+  nodeBorderWidth: number(
+    "Nodes",
+    "Border width",
+    3,
+    0,
+    20,
+    0.5,
+    "Node border width, in graph units.",
+  ),
+  rootBorderBoost: number(
+    "Nodes",
+    "Root border +",
+    1.5,
+    0,
+    10,
+    0.5,
+    "The root's border is this much thicker.",
+  ),
+  showIcons: boolean(
+    "Nodes",
+    "Icons",
+    true,
+    "Draw each node's icon (its `icon` URL).",
+  ),
 
   // ---------------------------------------------------------------- labels
-  showLabels: true,
-  labelFontScale: 1,
-  /** "auto" (where the layout leaves room), "below", "above", "left" or "right". */
-  labelPosition: "auto",
-  labelBackdrop: true,
-  /** Labels fade out below this zoom (except focused and high-priority ones). */
-  labelFadeZoom: 0.35,
-  labelWrapScale: 1,
-  /** "wrap" or "ellipsis". */
-  labelOverflow: "wrap",
+  showLabels: boolean("Labels", "Labels", true, "Draw node labels."),
+  fontSize: number(
+    "Labels",
+    "Font size",
+    11,
+    4,
+    48,
+    0.5,
+    "Base label font size, in graph units (before labelFontScale).",
+  ),
+  labelFontScale: number(
+    "Labels",
+    "Font size ×",
+    1,
+    0.3,
+    4,
+    0.05,
+    "Multiplies every label's font size.",
+  ),
+  rootFontScale: number(
+    "Labels",
+    "Root font ×",
+    1.2,
+    0.5,
+    3,
+    0.05,
+    "The root's label is this much bigger (and bold).",
+  ),
+  labelPosition: choice(
+    "Labels",
+    "Position",
+    "auto",
+    ["auto", "below", "above", "left", "right"],
+    '"auto": beside nodes in horizontal trees, below everywhere else.',
+  ),
+  labelBackdrop: boolean(
+    "Labels",
+    "Backdrop",
+    true,
+    "A dark backdrop behind labels, for contrast over edges.",
+  ),
+  labelFadeZoom: number(
+    "Labels",
+    "Fade below zoom",
+    0.35,
+    0,
+    4,
+    0.01,
+    "Labels fade out below this zoom (except focused and high-priority ones).",
+  ),
+  labelWidth: number(
+    "Labels",
+    "Wrap width",
+    120,
+    20,
+    1000,
+    5,
+    "Labels wrap (or cut off) at this width, in graph units (before labelWrapScale).",
+  ),
+  labelWrapScale: number(
+    "Labels",
+    "Wrap width ×",
+    1,
+    0.2,
+    5,
+    0.05,
+    "Multiplies the wrap width.",
+  ),
+  labelOverflow: choice(
+    "Labels",
+    "Overflow",
+    "wrap",
+    ["wrap", "ellipsis"],
+    "Long labels wrap onto more lines, or are cut off with an ellipsis.",
+  ),
 
   // ---------------------------------------------------------------- edges
-  /** "straight", "taxi" (right angles), "round-taxi" or "curved". */
-  edgeRouting: "taxi",
-  edgeCornerRadius: 10,
-  edgeCurvature: 1,
-  edgeWidth: 1.6,
-  edgeOpacity: 1,
-  /** "solid", "dashed" or "dotted". */
-  edgeLineStyle: "solid",
-  /** "neutral" (the theme's edge colour), "source" or "target" (the colour of the node at that end). */
-  edgeColorMode: "neutral",
-  showArrows: true,
-  /** "triangle", "vee", "circle"… (see render/edge-geometry.js) */
-  arrowShape: "triangle",
-  /** Which end of an edge gets the arrowhead: "target", "source" or "both". */
-  arrowEnd: "target",
-  arrowScale: 0.8,
-  /** Draw edge labels (an edge's `label`). */
-  edgeLabels: true,
+  edgeRouting: choice(
+    "Edges",
+    "Routing",
+    "taxi",
+    ["straight", "taxi", "round-taxi", "curved"],
+    'How edges bend; radial layouts use arcs for anything but "straight". Or one added with registerEdgeRouting().',
+    true,
+  ),
+  edgeCornerRadius: number(
+    "Edges",
+    "Corner radius",
+    10,
+    0,
+    100,
+    1,
+    "round-taxi: how round the corners are.",
+  ),
+  edgeCurvature: number(
+    "Edges",
+    "Curvature",
+    1,
+    -4,
+    4,
+    0.05,
+    "Arcs (radial layouts): how far edges bow.",
+  ),
+  edgeWidth: number(
+    "Edges",
+    "Width",
+    1.6,
+    0.1,
+    20,
+    0.1,
+    "Edge width, in screen pixels.",
+  ),
+  edgeOpacity: number(
+    "Edges",
+    "Opacity",
+    1,
+    0,
+    1,
+    0.01,
+    "How opaque edges are.",
+  ),
+  edgeLineStyle: choice(
+    "Edges",
+    "Line",
+    "solid",
+    ["solid", "dashed", "dotted"],
+    "Every edge's line pattern (classes can override it).",
+  ),
+  edgeColorMode: choice(
+    "Edges",
+    "Colour",
+    "neutral",
+    ["neutral", "source", "target"],
+    '"neutral": the theme\'s edge colour; "source" or "target": the colour of the node at that end.',
+  ),
+  showArrows: boolean("Edges", "Arrows", true, "Draw arrowheads."),
+  arrowShape: choice(
+    "Edges",
+    "Arrowhead",
+    "triangle",
+    [
+      "triangle",
+      "vee",
+      "chevron",
+      "triangle-backcurve",
+      "circle",
+      "square",
+      "tee",
+    ],
+    "A built-in arrowhead, or one added with registerArrowShape().",
+    true,
+  ),
+  arrowEnd: choice(
+    "Edges",
+    "Arrow at",
+    "target",
+    ["target", "source", "both"],
+    "Which end of an edge gets the arrowhead.",
+  ),
+  arrowScale: number(
+    "Edges",
+    "Arrow size",
+    0.8,
+    0.1,
+    5,
+    0.05,
+    "Arrowhead size.",
+  ),
+  edgeLabels: boolean(
+    "Edges",
+    "Edge labels",
+    true,
+    "Draw edge labels (an edge's `label`).",
+  ),
 
   // ---------------------------------------------------------------- interaction
-  /** What hovering a node lights up: "both", "ancestors", "descendants" or "none". */
-  hoverMode: "both",
-  /** Keep the selected node's lineage lit after the pointer leaves it. */
-  pinSelectionLineage: true,
-  /** Light pulses travel along lit edges, toward each edge's "target" or its "source". */
-  animateFlow: true,
-  flowToward: "target",
-  flowSpeed: 1,
-  /** How visible everything outside a lit lineage stays. */
-  dimOpacity: 0.18,
-  smoothZoom: true,
-  zoomSpeed: 1,
-  minZoom: 0.005,
-  maxZoom: 4,
-  /** Fitting the view never zooms in past this. */
-  maxFitZoom: 1.6,
-  /** "dots" or "grid" follow pan and zoom on the canvas wrapper (see GraphView.syncBackground); anything else is left alone. */
-  canvasBackground: "none",
+  hoverMode: choice(
+    "Interaction",
+    "Hover lights",
+    "both",
+    ["both", "ancestors", "descendants", "none"],
+    "What hovering a node lights up.",
+  ),
+  hoverDelay: integer(
+    "Interaction",
+    "Hover delay",
+    35,
+    0,
+    2000,
+    5,
+    "Milliseconds before hover lineage shows, so sweeping across the graph doesn't flicker.",
+  ),
+  pinSelectionLineage: boolean(
+    "Interaction",
+    "Pin selection",
+    true,
+    "Keep the selected node's lineage lit after the pointer leaves it.",
+  ),
+  animateFlow: boolean(
+    "Interaction",
+    "Flow",
+    true,
+    "Light pulses travel along lit edges.",
+  ),
+  flowToward: choice(
+    "Interaction",
+    "Flow toward",
+    "target",
+    ["target", "source"],
+    "Which way the pulses travel.",
+  ),
+  flowSpeed: number(
+    "Interaction",
+    "Flow speed",
+    1,
+    0,
+    10,
+    0.1,
+    "How fast the pulses travel.",
+  ),
+  dimOpacity: number(
+    "Interaction",
+    "Dimmed opacity",
+    0.18,
+    0,
+    1,
+    0.01,
+    "How visible everything outside a lit lineage or highlight stays.",
+  ),
+  nodesDraggable: boolean(
+    "Interaction",
+    "Drag nodes",
+    true,
+    "Nodes can be dragged (the physics mode decides what follows).",
+  ),
+  smoothZoom: boolean(
+    "Interaction",
+    "Smooth zoom",
+    true,
+    "Wheel zoom glides instead of stepping.",
+  ),
+  zoomSpeed: number(
+    "Interaction",
+    "Zoom speed",
+    1,
+    0.1,
+    5,
+    0.05,
+    "Wheel zoom sensitivity.",
+  ),
+  minZoom: number(
+    "Interaction",
+    "Min zoom",
+    0.005,
+    0.0001,
+    1,
+    0.001,
+    "How far out you can zoom.",
+  ),
+  maxZoom: number(
+    "Interaction",
+    "Max zoom",
+    4,
+    0.1,
+    100,
+    0.1,
+    "How far in you can zoom.",
+  ),
+  maxFitZoom: number(
+    "Interaction",
+    "Max fit zoom",
+    1.6,
+    0.05,
+    100,
+    0.05,
+    "Fitting the view never zooms in past this.",
+  ),
+  fitPadding: number(
+    "Interaction",
+    "Fit padding",
+    40,
+    0,
+    500,
+    1,
+    "Space around the graph when fitting the view (screen pixels).",
+  ),
+  focusPadding: number(
+    "Interaction",
+    "Focus padding",
+    60,
+    0,
+    500,
+    1,
+    "focusOn(): space around the nodes (screen pixels).",
+  ),
+  focusMaxZoom: number(
+    "Interaction",
+    "Focus max zoom",
+    2,
+    0.05,
+    100,
+    0.05,
+    "focusOn() never zooms in past this.",
+  ),
+  smartFitMinZoom: number(
+    "Interaction",
+    "Smart fit below",
+    0.3,
+    0,
+    4,
+    0.01,
+    'fit: "smart" opens on the root instead when fitting would zoom out below this…',
+  ),
+  smartFitMinNodes: integer(
+    "Interaction",
+    "Smart fit over",
+    80,
+    0,
+    100000,
+    1,
+    "…and the graph has more nodes than this…",
+  ),
+  smartFitZoom: number(
+    "Interaction",
+    "Smart fit zoom",
+    0.6,
+    0.05,
+    4,
+    0.05,
+    "…at this zoom.",
+  ),
+  doubleTapMs: integer(
+    "Interaction",
+    "Double tap",
+    300,
+    50,
+    2000,
+    10,
+    "Most milliseconds between the taps of a double tap.",
+  ),
+  longPressMs: integer(
+    "Interaction",
+    "Long press",
+    550,
+    100,
+    5000,
+    10,
+    "Milliseconds a touch is held before it counts as a context tap.",
+  ),
+  dragThresholdMouse: number(
+    "Interaction",
+    "Drag after (mouse)",
+    4,
+    0,
+    50,
+    1,
+    "Pixels a mouse moves before a press becomes a drag.",
+  ),
+  dragThresholdPen: number(
+    "Interaction",
+    "Drag after (pen)",
+    6,
+    0,
+    50,
+    1,
+    "Pixels a pen moves before a press becomes a drag.",
+  ),
+  dragThresholdTouch: number(
+    "Interaction",
+    "Drag after (touch)",
+    10,
+    0,
+    50,
+    1,
+    "Pixels a finger moves before a press becomes a drag.",
+  ),
+  panInertia: number(
+    "Interaction",
+    "Pan glide",
+    0.28,
+    0,
+    3,
+    0.01,
+    "How long the view glides after a flick (seconds; 0: it stops dead).",
+  ),
+  flickMinSpeed: number(
+    "Interaction",
+    "Flick speed",
+    120,
+    0,
+    5000,
+    10,
+    "Pixels per second a pan must be moving at release to glide.",
+  ),
+  canvasBackground: {
+    type: "string",
+    group: "Interaction",
+    label: "Background",
+    default: "none",
+    hint: '"dots" or "grid": a pattern on the canvas wrapper that follows pan and zoom (see syncBackground). Anything else is left alone.',
+  },
+  backgroundCellSize: number(
+    "Interaction",
+    "Background cell",
+    26,
+    4,
+    200,
+    1,
+    "The background pattern's cell at zoom 1 (graph units).",
+  ),
 
   // ---------------------------------------------------------------- motion
-  animationsEnabled: true,
-  animationDuration: 450,
-  /** "smooth", "snappy", "bouncy"… (see render/spring.js) */
-  animationEasing: "smooth",
-  /** A brand-new graph grows out of its root level by level. */
-  growNewGraphs: true,
-};
+  animationsEnabled: boolean(
+    "Motion",
+    "Animations",
+    true,
+    "Animate changes (off: everything snaps).",
+  ),
+  animationDuration: integer(
+    "Motion",
+    "Duration",
+    450,
+    0,
+    5000,
+    10,
+    "About how long a transition takes (milliseconds).",
+  ),
+  animationEasing: choice(
+    "Motion",
+    "Feel",
+    "smooth",
+    ["smooth", "snappy", "bouncy", "linear"],
+    "How motion feels, or one added with registerEasing().",
+    true,
+  ),
+  growNewGraphs: boolean(
+    "Motion",
+    "Grow new graphs",
+    true,
+    "A brand-new graph grows out of its root level by level.",
+  ),
+  growStagger: number(
+    "Motion",
+    "Grow stagger",
+    0.18,
+    0,
+    2,
+    0.01,
+    "Delay per level while growing, as a share of the duration.",
+  ),
+  growMaxDelay: number(
+    "Motion",
+    "Grow max delay",
+    1.4,
+    0,
+    10,
+    0.05,
+    "The longest any level waits, as a share of the duration.",
+  ),
+  maxAnimatedNodes: integer(
+    "Motion",
+    "Animate up to",
+    5000,
+    0,
+    1000000,
+    100,
+    "Graphs bigger than this snap instead of morphing.",
+  ),
+  maxStaggeredNodes: integer(
+    "Motion",
+    "Grow up to",
+    800,
+    0,
+    1000000,
+    50,
+    "Graphs bigger than this appear at once instead of growing level by level.",
+  ),
 
-/** Base sizes in graph units; the scale options multiply these. */
-export const STYLE_BASE = {
-  nodeSize: 48,
-  fontSize: 11,
-  labelWidth: 120,
-};
+  // ---------------------------------------------------------------- styling hooks
+  nodeStyle: {
+    type: "function",
+    nullable: true,
+    default: null,
+    group: "Styling",
+    label: "Node style hook",
+    hint: "(node, style) => changes: return any style fields to change for this node (after classes and node.style).",
+  },
+  edgeStyle: {
+    type: "function",
+    nullable: true,
+    default: null,
+    group: "Styling",
+    label: "Edge style hook",
+    hint: "(edge, style) => changes: return any style fields to change for this edge (after classes and edge.style).",
+  },
+});
+
+/**
+ * @typedef {import('tether/index.js').LayoutSettings & {
+ *   nodeSize: number, nodeSizeScale: number, rootSizeScale: number, nodeShape: string, tintNodeFill: boolean,
+ *   tintFillAlpha: number, nodeBorderWidth: number, rootBorderBoost: number, showIcons: boolean,
+ *   showLabels: boolean, fontSize: number, labelFontScale: number, rootFontScale: number,
+ *   labelPosition: "auto" | "below" | "above" | "left" | "right", labelBackdrop: boolean, labelFadeZoom: number,
+ *   labelWidth: number, labelWrapScale: number, labelOverflow: "wrap" | "ellipsis",
+ *   edgeRouting: string, edgeCornerRadius: number, edgeCurvature: number, edgeWidth: number, edgeOpacity: number,
+ *   edgeLineStyle: "solid" | "dashed" | "dotted", edgeColorMode: "neutral" | "source" | "target",
+ *   showArrows: boolean, arrowShape: string, arrowEnd: "target" | "source" | "both", arrowScale: number,
+ *   edgeLabels: boolean,
+ *   hoverMode: "both" | "ancestors" | "descendants" | "none", hoverDelay: number, pinSelectionLineage: boolean,
+ *   animateFlow: boolean, flowToward: "target" | "source", flowSpeed: number, dimOpacity: number,
+ *   nodesDraggable: boolean, smoothZoom: boolean, zoomSpeed: number, minZoom: number, maxZoom: number,
+ *   maxFitZoom: number, fitPadding: number, focusPadding: number, focusMaxZoom: number, smartFitMinZoom: number,
+ *   smartFitMinNodes: number, smartFitZoom: number, doubleTapMs: number, longPressMs: number,
+ *   dragThresholdMouse: number, dragThresholdPen: number, dragThresholdTouch: number, panInertia: number,
+ *   flickMinSpeed: number, canvasBackground: string, backgroundCellSize: number,
+ *   animationsEnabled: boolean, animationDuration: number, animationEasing: string, growNewGraphs: boolean,
+ *   growStagger: number, growMaxDelay: number, maxAnimatedNodes: number, maxStaggeredNodes: number,
+ *   nodeStyle: ((node: import('./graph-view.js').GraphNode, style: import('./style.js').NodeStyle) =>
+ *     Partial<import('./style.js').NodeStyle> | void) | null,
+ *   edgeStyle: ((edge: import('./graph-view.js').GraphEdge, style: import('./style.js').EdgeStyle) =>
+ *     Partial<import('./style.js').EdgeStyle> | void) | null,
+ * }} Options
+ */
+
+/** @type {Readonly<Options>} */
+export const DEFAULT_OPTIONS = Object.freeze(defaultsOf(OPTIONS_SCHEMA));
+
+/** The options as a list, in schema order, for settings UIs: { key, type, default, min, max, step, values, label, group, hint }. */
+export const OPTIONS = Object.freeze(describeSchema(OPTIONS_SCHEMA));
+
+/**
+ * `patch` checked against the schema, on top of `base` (default: the defaults).
+ * @param {Partial<Options>} patch
+ * @param {{ base?: Options, strict?: boolean, warn?: (message: string) => void }} [options]
+ * @returns {Options}
+ */
+export function resolveOptions(patch, options = {}) {
+  return resolve(OPTIONS_SCHEMA, patch, { scope: "Prism options", ...options });
+}
+
+/**
+ * Base sizes in graph units, as of the defaults (nodeSize, fontSize and labelWidth are options now).
+ * @deprecated read the options instead
+ */
+export const STYLE_BASE = Object.freeze({
+  nodeSize: DEFAULT_OPTIONS.nodeSize,
+  fontSize: DEFAULT_OPTIONS.fontSize,
+  labelWidth: DEFAULT_OPTIONS.labelWidth,
+});

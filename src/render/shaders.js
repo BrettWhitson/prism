@@ -54,6 +54,18 @@ void main() {
   gl_Position = vec4(clip.xy, 0.0, 1.0);
 }`;
 
+/**
+ * The node fragment shader, with custom shapes (plugins.js customShapeGlsl) compiled in: their functions, and their
+ * dispatch at the top of shapeDistance.
+ * @param {{ functions?: string, dispatch?: string }} [custom]
+ */
+export function nodeFragmentSource({ functions = "", dispatch = "" } = {}) {
+  return NODE_FRAGMENT.replace("/*CUSTOM_SHAPES*/", functions).replace(
+    "/*CUSTOM_DISPATCH*/",
+    dispatch,
+  );
+}
+
 export const NODE_FRAGMENT = `#version 300 es
 precision highp float;
 in vec2 p;
@@ -84,8 +96,12 @@ float polygon(vec2 q, float n, float apothem, float rotation) {
   float bn = mod(a, 2.0 * an) - an;
   return length(q) * cos(bn) - apothem;
 }
+/*CUSTOM_SHAPES*/
 float shapeDistance(vec2 q, vec2 h, float id) {
+/*CUSTOM_DISPATCH*/
   float m = min(h.x, h.y);
+  if (id > 5.5) return roundBox(q, h, m * 0.26); // a custom shape that was left out: the default
+
   if (id < 0.5) return roundBox(q, h, m * 0.06);
   if (id < 1.5) return roundBox(q, h, m * 0.26);
   if (id < 2.5) return roundBox(q, h, m);

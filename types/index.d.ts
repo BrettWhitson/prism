@@ -37,7 +37,16 @@ export {
   DEFAULT_INPUT,
 } from "./render/webgl-graph.js";
 export * from "tether/index.js";
-
+export type Options = import("./options.js").Options;
+export type Theme = import("./style.js").Theme;
+export type NodeStyle = import("./style.js").NodeStyle;
+export type EdgeStyle = import("./style.js").EdgeStyle;
+export type ClassRules = import("./style.js").ClassRules;
+export type GraphNode = import("./graph-view.js").GraphNode;
+export type GraphEdge = import("./graph-view.js").GraphEdge;
+export type Viewport = import("./graph-view.js").Viewport;
+export type GraphViewEvents = import("./graph-view.js").GraphViewEvents;
+export type EdgeRouter = import("./render/plugins.js").EdgeRouter;
 /**
  * @typedef {import('./options.js').Options} Options
  * @typedef {import('./style.js').Theme} Theme

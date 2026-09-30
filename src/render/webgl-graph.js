@@ -28,9 +28,10 @@ import {
   ARROW_VERTEX,
   EDGE_FRAGMENT,
   EDGE_VERTEX,
-  NODE_FRAGMENT,
   NODE_VERTEX,
+  nodeFragmentSource,
 } from "./shaders.js";
+import { customShapeGlsl, glslShapeNames, pluginVersion } from "./plugins.js";
 
 /**
  * Prism's renderer. This is its engine: WebGL2 draws every node, edge and arrowhead in a handful of instanced calls, a
@@ -49,13 +50,22 @@ const ICON_SIZE = 64; // atlas cell, pixels
 const ATLAS_SIZE = 2048; // 961 icons (31 × 31: 64 px cells, 2 px apart)
 const ICON_RETRY_MS = 10000; // an icon that failed to load is tried again when next asked for, after this long
 const LABEL_RENDER_SCALE = 2; // label bitmaps are drawn at 2× and scaled down
-const DOUBLE_TAP_MS = 300;
-const LONG_PRESS_MS = 550;
 /** How far a press must move before it's a drag: fingers wobble more than mice, and a tap must stay a tap. */
-const DRAG_THRESHOLD_PX = { mouse: 4, pen: 6, touch: 10 };
-const GLIDE_FRICTION_S = 0.28; // time constant for the camera's glide after a flick
 const FLICK_WINDOW_MS = 90; // pan moves this recent set the glide's speed
-const FLICK_MIN_SPEED = 120; // px/s; slower than this, letting go just stops
+/** Input timings and distances; setOptions({ input }) changes any of them. */
+export const DEFAULT_INPUT = {
+  smoothZoom: true,
+  zoomSpeed: 1,
+  draggable: true,
+  doubleTapMs: 300,
+  longPressMs: 550,
+  /** How far a pointer moves before a press becomes a drag, per pointer type (CSS px). */
+  dragThreshold: { mouse: 4, pen: 6, touch: 10 },
+  /** Time constant of the camera's glide after a flick (seconds); 0: no glide. */
+  panInertia: 0.28,
+  /** px/s; slower than this, letting go of a pan just stops. */
+  flickMinSpeed: 120,
+};
 const MAX_EXPORT_PIXELS = 16_777_216; // exported images stay within what browsers allow a canvas (4096²)
 const MIN_NODE_SIZE = 1; // world units, for nodes whose size isn't a usable number
 /** Interaction and label colours; override any of them with the constructor's `colors` option. */
@@ -104,7 +114,16 @@ export class WebGLGraph {
     overflow: "wrap",
   };
   #motion = { enabled: true, params: springFor(450), durationMs: 450 };
-  #input = { smoothZoom: true, zoomSpeed: 1, draggable: true };
+  #input = {
+    ...DEFAULT_INPUT,
+    dragThreshold: { ...DEFAULT_INPUT.dragThreshold },
+  };
+  /** @type {WebGLVertexArrayObject} */ nodeVao;
+  /** @type {WebGLBuffer} */ nodeBuffer;
+  /** @type {WebGLVertexArrayObject} */ topNodeVao;
+  /** @type {WebGLBuffer} */ topNodeBuffer;
+  /** The plugin registry version the node shader and arrow meshes were built for. */
+  #builtPlugins = -1;
   #dimAlpha = 0.18;
   #flowSpeed = 1;
 
@@ -241,6 +260,7 @@ export class WebGLGraph {
   /**
    * @param {{ motion?: { enabled?: boolean, durationMs?: number, feel?: string }, dimAlpha?: number,
    *           flowSpeed?: number, smoothZoom?: boolean, zoomSpeed?: number, draggable?: boolean,
+   *           input?: Partial<typeof DEFAULT_INPUT>,
    *           labels?: Partial<{ position: string, backdrop: boolean, fadeZoom: number, maxWidth: number,
    *           overflow: string }> }} options
    */
@@ -256,6 +276,16 @@ export class WebGLGraph {
     if (options.flowSpeed != null) this.#flowSpeed = options.flowSpeed;
     for (const key of ["smoothZoom", "zoomSpeed", "draggable"])
       if (options[key] != null) this.#input[key] = options[key];
+    if (options.input)
+      for (const [key, value] of Object.entries(options.input))
+        if (value != null && key in DEFAULT_INPUT)
+          this.#input[key] =
+            key === "dragThreshold"
+              ? {
+                  ...this.#input.dragThreshold,
+                  .../** @type {object} */ (value),
+                }
+              : value;
     if (options.labels) {
       this.#labels = { ...this.#labels, ...options.labels };
       this.#labelCache.clear();
@@ -263,6 +293,21 @@ export class WebGLGraph {
     for (const record of [...this.#nodes, ...this.#ghosts])
       this.#retargetNode(record);
     for (const record of this.#edges) this.#retargetEdge(record); // dimAlpha
+    this.#geometryDirty = true;
+    this.requestRender();
+  }
+
+  /** The interaction colours (DEFAULT_COLORS), a copy. */
+  get colors() {
+    return { ...this.#colors };
+  }
+
+  /** Change any interaction colours (selection, hover, label text and backdrops): they apply at once. */
+  setColors(patch) {
+    this.#colors = { ...this.#colors, ...patch };
+    this.#labelCache.clear();
+    for (const record of [...this.#nodes, ...this.#ghosts])
+      this.#retargetNode(record);
     this.#geometryDirty = true;
     this.requestRender();
   }
@@ -280,8 +325,9 @@ export class WebGLGraph {
    * stays under the pointer if it's still there; if it's gone, the drag ends (onNodeDragEnd). Positions and sizes
    * that aren't finite numbers are read as 0 and the smallest size.
    *
-   * @param {{ nodes: object[], edges: object[], routing?: string, flowAxis?: string, cornerRadius?: number,
-   *           curvature?: number }} graph
+   * @param {{ nodes: { id: string, x: number, y: number, width: number, height: number, style: any }[],
+   *           edges: { id: string, source: string, target: string, style: any }[], routing?: string,
+   *           flowAxis?: string, cornerRadius?: number, curvature?: number }} graph
    * @param {{ animate?: boolean, spawnFrom?: Map<string, {x: number, y: number}>, delays?: Map<string, number>,
    *           ghostTo?: Map<string, {x: number, y: number}> }} [transition]
    */
@@ -918,7 +964,7 @@ export class WebGLGraph {
   /** Programs, buffers and the icon texture: at start, and again when a lost context comes back. */
   #setUpGl() {
     const gl = this.gl;
-    this.nodeProgram = this.#program(NODE_VERTEX, NODE_FRAGMENT);
+    this.#buildNodeProgram();
     this.edgeProgram = this.#program(EDGE_VERTEX, EDGE_FRAGMENT);
     this.arrowProgram = this.#program(ARROW_VERTEX, ARROW_FRAGMENT);
     this.uniforms = new Map();
@@ -990,6 +1036,56 @@ export class WebGLGraph {
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  }
+
+  /**
+   * The node shader, with the registered custom shapes compiled in. A custom GLSL shape that doesn't compile is left
+   * out (and drawn as the default shape), with a warning, rather than taking every node down with it.
+   */
+  #buildNodeProgram() {
+    this.#builtPlugins = pluginVersion();
+    const old = this.nodeProgram;
+    const build = (skip) =>
+      this.#program(NODE_VERTEX, nodeFragmentSource(customShapeGlsl(skip)));
+    try {
+      this.nodeProgram = build(new Set());
+    } catch (error) {
+      const names = glslShapeNames();
+      const broken = new Set(
+        names.filter((name) => {
+          try {
+            this.gl.deleteProgram(
+              build(new Set(names.filter((other) => other !== name))),
+            );
+            return false;
+          } catch {
+            return true;
+          }
+        }),
+      );
+      if (!broken.size) throw error;
+      console.warn(
+        `Prism: node shape${broken.size > 1 ? "s" : ""} ${[...broken].map((n) => `"${n}"`).join(", ")} didn't compile and ${broken.size > 1 ? "are" : "is"} drawn as the default shape:
+${error.message}`,
+      );
+      this.nodeProgram = build(broken);
+    }
+    if (old && old !== this.nodeProgram) {
+      this.uniforms?.delete(old);
+      this.gl.deleteProgram(old);
+    }
+  }
+
+  /** Something was registered (plugins.js): rebuild what depends on it. */
+  #applyPlugins() {
+    this.#buildNodeProgram();
+    for (const group of this.#arrowGroups.values()) {
+      this.gl.deleteVertexArray(group.vao);
+      this.gl.deleteBuffer(group.buffer);
+    }
+    this.#arrowGroups.clear();
+    this.#layout = { ...this.#layout }; // routes are cached per layout: route again
+    this.#geometryDirty = true;
   }
 
   #program(vertexSource, fragmentSource) {
@@ -1318,7 +1414,7 @@ export class WebGLGraph {
   #stepGlide(dt) {
     const glide = this.#glide;
     this.camera.panBy(glide.vx * dt, glide.vy * dt);
-    const decay = Math.exp(-dt / GLIDE_FRICTION_S);
+    const decay = Math.exp(-dt / Math.max(0.001, this.#input.panInertia));
     glide.vx *= decay;
     glide.vy *= decay;
     this.handlers.onViewportChange?.();
@@ -1347,6 +1443,7 @@ export class WebGLGraph {
 
   #draw() {
     const gl = this.gl;
+    if (this.#builtPlugins !== pluginVersion()) this.#applyPlugins();
     this.#flushAtlas();
     this.#syncGeometry();
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -1933,7 +2030,7 @@ export class WebGLGraph {
             if (this.#gesture?.kind !== "node") return;
             this.#gesture = { kind: "done" };
             this.handlers.onNodeContextTap?.(record.id, event);
-          }, LONG_PRESS_MS);
+          }, this.#input.longPressMs);
       } else this.#gesture = { kind: "pan", start };
     });
 
@@ -1967,7 +2064,9 @@ export class WebGLGraph {
         current.x - gesture.start?.x,
         current.y - gesture.start?.y,
       );
-      const threshold = DRAG_THRESHOLD_PX[event.pointerType] ?? 4;
+      const threshold =
+        this.#input.dragThreshold[event.pointerType] ??
+        this.#input.dragThreshold.mouse;
       if (gesture.kind === "node" && moved > threshold) {
         clearTimeout(this.#longPress);
         if (this.#input.draggable && gesture.record.style.events !== false) {
@@ -2021,9 +2120,14 @@ export class WebGLGraph {
       if (ended.kind === "pan") {
         if (ended.moved) {
           // Let go mid-flick: the view glides on and slows down.
-          const velocity = this.#motion.enabled
-            ? flickVelocity(samples, performance.now())
-            : null;
+          const velocity =
+            this.#motion.enabled && this.#input.panInertia > 0
+              ? flickVelocity(
+                  samples,
+                  performance.now(),
+                  this.#input.flickMinSpeed,
+                )
+              : null;
           if (velocity) {
             this.#glide = velocity;
             this.requestRender();
@@ -2036,7 +2140,7 @@ export class WebGLGraph {
       // A tap on a node.
       const id = ended.record.id;
       const now = performance.now();
-      if (lastTap.id === id && now - lastTap.at < DOUBLE_TAP_MS) {
+      if (lastTap.id === id && now - lastTap.at < this.#input.doubleTapMs) {
         lastTap = { id: null, at: 0 };
         this.handlers.onNodeDoubleTap?.(id, event);
       } else {
@@ -2056,7 +2160,11 @@ export class WebGLGraph {
  * The glide velocity (px/s) for letting go of a pan at `now`, from its recent moves ({ at, dx, dy }), or null for no
  * glide. Only moves in the last FLICK_WINDOW_MS count, so holding still before letting go stops the view.
  */
-export function flickVelocity(samples, now) {
+export function flickVelocity(
+  samples,
+  now,
+  minSpeed = DEFAULT_INPUT.flickMinSpeed,
+) {
   const recent = samples.filter((sample) => now - sample.at < FLICK_WINDOW_MS);
   const span = recent.length > 1 ? recent.at(-1).at - recent[0].at : 0;
   if (span <= 10) return null;
@@ -2065,7 +2173,7 @@ export function flickVelocity(samples, now) {
     dy = recent.slice(1).reduce((sum, s) => sum + s.dy, 0);
   const vx = (dx / span) * 1000,
     vy = (dy / span) * 1000;
-  return Math.hypot(vx, vy) > FLICK_MIN_SPEED ? { vx, vy } : null;
+  return Math.hypot(vx, vy) > minSpeed ? { vx, vy } : null;
 }
 
 /** `value` when it's a finite number, else `fallback`. */

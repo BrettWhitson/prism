@@ -1,4 +1,5 @@
 import { arrowTemplate, edgeRoute } from "./edge-geometry.js";
+import { pluginVersion, shapeId } from "./plugins.js";
 import { cachedColor } from "./color.js";
 
 /**
@@ -22,15 +23,6 @@ import { cachedColor } from "./color.js";
 export const NODE_FLOATS = 36;
 export const EDGE_FLOATS = 16;
 export const ARROW_FLOATS = 9;
-export const SHAPES = {
-  rectangle: 0,
-  "round-rectangle": 1,
-  ellipse: 2,
-  hexagon: 3,
-  octagon: 4,
-  "round-diamond": 5,
-  diamond: 5,
-};
 const NODE_PATTERNS = { solid: 0, dashed: 1, dotted: 2, stack: 3 };
 const EDGE_PATTERNS = { dashed: 1, dotted: 2 };
 const NO_ICON = [0, 0, 0, 0];
@@ -85,7 +77,12 @@ export function arrowSize(width, arrowScale = 1) {
 }
 
 const insets = new Map();
+let insetsVersion = -1;
 function arrowInset(shape) {
+  if (insetsVersion !== pluginVersion()) {
+    insets.clear();
+    insetsVersion = pluginVersion();
+  }
   if (!insets.has(shape)) insets.set(shape, arrowTemplate(shape).inset);
   return insets.get(shape);
 }
@@ -420,7 +417,7 @@ function writeNode(d, at, record, iconUv, hidden = false) {
   putColor("ring");
   put((style.icon && iconUv(style.icon)) || NO_ICON);
   d[o++] = style.borderWidth ?? 3;
-  d[o++] = SHAPES[style.shape] ?? 1;
+  d[o++] = shapeId(style.shape);
   d[o++] = NODE_PATTERNS[style.pattern] ?? 0;
   d[o++] = style.badge ? 1 : 0;
   d[o++] = hidden ? 0 : Math.max(0, Math.min(1, record.alpha.value));

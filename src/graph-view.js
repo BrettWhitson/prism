@@ -1,33 +1,70 @@
-import { LayoutGraph } from "tether/layout-graph.js";
-import { runLayout } from "tether/run-layout.js";
-import { LivePhysics } from "tether/live-physics.js";
-import { isDirectionalLayout, treeDirection } from "tether/directions.js";
+import {
+  Emitter,
+  LayoutGraph,
+  LivePhysics,
+  isDirectionalLayout,
+  runLayout,
+  treeDirection,
+} from "tether/index.js";
 import { WebGLGraph } from "./render/webgl-graph.js";
 import { planTransition } from "./render/transition-plan.js";
 import { labelBox, labelFont, layoutLabel } from "./render/labels.js";
-import { DEFAULT_OPTIONS, STYLE_BASE } from "./options.js";
+import { resolveOptions } from "./options.js";
 import {
-  DEFAULT_THEME,
+  RENDERER_COLOR_KEYS,
   resolveEdgeStyle,
   resolveFlowAxis,
   resolveLabelPosition,
   resolveNodeStyle,
   resolveRouting,
+  resolveTheme,
 } from "./style.js";
-
-/** Graphs up to this size morph between renders; bigger ones snap (springs handle thousands, but not forever). */
-const MAX_ANIMATED_NODES = 5000;
-/** A new graph grows level by level up to this size; bigger ones appear at once. */
-const MAX_STAGGERED_NODES = 800;
-/** Hover lineage waits this long, so sweeping the pointer across a graph doesn't flicker. */
-const HOVER_DELAY_MS = 35;
 
 /**
  * @typedef {{ id: string, label?: string, color?: string, icon?: string, classes?: string[] | string,
- *             root?: boolean }} GraphNode
+ *             root?: boolean, style?: import('./style.js').NodeRule, [data: string]: any }} GraphNode
+ *   style: this node's own style overrides (any NodeStyle field); other fields are yours (the style hooks see them)
  * @typedef {{ id?: string, source: string, target: string, label?: string, sourceColor?: string,
- *             targetColor?: string, classes?: string[] | string }} GraphEdge
+ *             targetColor?: string, classes?: string[] | string, style?: import('./style.js').EdgeRule,
+ *             [data: string]: any }} GraphEdge
+ * @typedef {{ zoom: number, panX: number, panY: number }} Viewport
+ *   the camera: a graph point (x, y) is drawn at (x × zoom + panX, y × zoom + panY) CSS pixels
  */
+
+/**
+ * The events a GraphView emits (view.on(type, listener) returns an unsubscribe function):
+ * @typedef {object} GraphViewEvents
+ * @property {[{ id: string, originalEvent: PointerEvent }]} nodeTap
+ * @property {[{ id: string, originalEvent: PointerEvent }]} nodeDoubleTap
+ * @property {[{ id: string, originalEvent: PointerEvent }]} nodeContextTap  right click or long press
+ * @property {[{ originalEvent?: PointerEvent }]} backgroundTap
+ * @property {[{ id: string, originalEvent: PointerEvent }]} nodeHoverStart
+ * @property {[{}]} nodeHoverEnd
+ * @property {[{ originalEvent: PointerEvent }]} pointerMove
+ * @property {[{ viewport: Viewport }]} viewportChange  pan or zoom (every frame while it moves)
+ * @property {[{ id: string }]} dragStart
+ * @property {[{ id: string, x: number, y: number }]} drag  the held node moved (graph coordinates)
+ * @property {[{ id: string }]} dragEnd
+ * @property {[{ reason: string }]} physicsStart  "drag", "shake" or "float-in"
+ * @property {[{}]} physicsSettle  the physics went still
+ * @property {[{ nodeCount: number, edgeCount: number, layoutMs: number }]} render  after render()
+ * @property {[{ id: string | null }]} select
+ * @property {[{ changed: string[] }]} optionsChange
+ * @property {[{ changed: string[] }]} themeChange
+ * @property {[{}]} destroy
+ */
+
+/** Handler names (the constructor's `handlers`) → the event they listen to. */
+const HANDLER_EVENTS = {
+  onNodeTap: "nodeTap",
+  onNodeDoubleTap: "nodeDoubleTap",
+  onNodeContextTap: "nodeContextTap",
+  onBackgroundTap: "backgroundTap",
+  onNodeHoverStart: "nodeHoverStart",
+  onNodeHoverEnd: "nodeHoverEnd",
+  onPointerMove: "pointerMove",
+  onViewportChange: "viewportChange",
+};
 
 /**
  * Prism's graphing engine: give it nodes and edges, and it styles them (style.js) and draws them (render/), then
@@ -37,13 +74,18 @@ const HOVER_DELAY_MS = 35;
  *
  * Edges run parent → child, from the root outward. The root is the node with `root: true`, or else the first node.
  *
- *   const view = new GraphView({ container, options: { direction: "LR" }, handlers: { onNodeTap } });
+ *   const view = new GraphView({ container, options: { direction: "LR" } });
+ *   view.on("nodeTap", ({ id }) => view.select(id));
  *   view.render({ nodes, edges, fit: true });
+ *
+ * Options and theme are checked against their schemas (options.js, style.js): bad values are clamped or replaced by
+ * their defaults with a warning, or throw with `strict: true`.
+ * @extends {Emitter<GraphViewEvents>}
  */
-export class GraphView {
+export class GraphView extends Emitter {
   #options;
   #theme;
-  #handlers;
+  #strict;
   #canvasWrapper;
   #classStyles = {};
   /** What's drawn: id → { data, classes: Set }, and the edges with their ends. */
@@ -69,44 +111,77 @@ export class GraphView {
   #resizeObserver;
 
   /**
-   * @param {{ container: HTMLElement, canvasWrapper?: HTMLElement, options?: Partial<typeof DEFAULT_OPTIONS>,
-   *           theme?: Partial<typeof DEFAULT_THEME>, handlers?: object,
+   * @param {{ container: HTMLElement, canvasWrapper?: HTMLElement,
+   *           options?: Partial<import('./options.js').Options>, theme?: Partial<import('./style.js').Theme>,
+   *           tuning?: Partial<import('tether/index.js').Tuning>, classStyles?: import('./style.js').ClassRules,
+   *           handlers?: Partial<Record<keyof typeof HANDLER_EVENTS, Function>>, strict?: boolean,
    *           rendererOptions?: { preserveDrawingBuffer?: boolean, badgeUrl?: string, colors?: object } }} config
-   *   handlers: onNodeTap(id, event), onNodeDoubleTap(id, event), onNodeContextTap(id, event), onBackgroundTap(),
-   *   onNodeHoverStart(id, event), onNodeHoverEnd(), onPointerMove(event), onViewportChange()
+   *   handlers: a shortcut for on(): onNodeTap(id, event), onNodeDoubleTap(id, event), onNodeContextTap(id, event),
+   *   onBackgroundTap(), onNodeHoverStart(id, event), onNodeHoverEnd(), onPointerMove(event), onViewportChange()
    *   canvasWrapper: the element whose CSS background follows pan and zoom (see syncBackground)
+   *   tuning: Tether's constants for this view (see setPhysicsTuning)
+   *   strict: invalid options and theme colours throw instead of warning
+   *   rendererOptions.colors: theme colours (older name; pass them in `theme`)
    */
   constructor({
     container,
     canvasWrapper,
     options = {},
     theme = {},
+    tuning,
+    classStyles,
     handlers = {},
+    strict = false,
     rendererOptions = {},
   }) {
-    this.#options = { ...DEFAULT_OPTIONS, ...options };
+    super();
+    this.#strict = strict;
+    this.#options = resolveOptions(options, { strict });
     this.#physics = new LivePhysics(this.#options);
-    this.#theme = { ...DEFAULT_THEME, ...theme };
-    this.#handlers = handlers;
+    if (tuning) this.#physics.tuning = tuning;
+    this.#physics.on("start", ({ reason }) =>
+      this.emit("physicsStart", { reason }),
+    );
+    this.#physics.on("settle", () => this.emit("physicsSettle", {}));
+    const { colors = {}, ...renderer } = rendererOptions;
+    this.#theme = resolveTheme({ ...colors, ...theme }, { strict });
+    if (classStyles) this.#classStyles = classStyles;
     this.#canvasWrapper = canvasWrapper ?? null;
+    // The old handlers object: each one listens to its event, called the old way (positional arguments).
+    for (const [name, handler] of Object.entries(handlers ?? {})) {
+      const type = HANDLER_EVENTS[name];
+      if (!type || typeof handler !== "function") continue;
+      this.on(type, (detail) =>
+        "id" in detail
+          ? handler(detail.id, detail.originalEvent)
+          : type === "pointerMove"
+            ? handler(detail.originalEvent)
+            : handler(),
+      );
+    }
     this.graph = new WebGLGraph(
       container,
       {
-        onNodeTap: (id, event) => handlers.onNodeTap?.(id, event),
-        onNodeDoubleTap: (id, event) => handlers.onNodeDoubleTap?.(id, event),
-        onNodeContextTap: (id, event) => handlers.onNodeContextTap?.(id, event),
-        onBackgroundTap: () => handlers.onBackgroundTap?.(),
+        onNodeTap: (id, event) =>
+          this.emit("nodeTap", { id, originalEvent: event }),
+        onNodeDoubleTap: (id, event) =>
+          this.emit("nodeDoubleTap", { id, originalEvent: event }),
+        onNodeContextTap: (id, event) =>
+          this.emit("nodeContextTap", { id, originalEvent: event }),
+        onBackgroundTap: (event) =>
+          this.emit("backgroundTap", { originalEvent: event }),
         onNodeHover: (id, event) =>
           id
-            ? handlers.onNodeHoverStart?.(id, event)
-            : handlers.onNodeHoverEnd?.(),
-        onPointerMove: (event) => handlers.onPointerMove?.(event),
+            ? this.emit("nodeHoverStart", { id, originalEvent: event })
+            : this.emit("nodeHoverEnd", {}),
+        onPointerMove: (event) =>
+          this.emit("pointerMove", { originalEvent: event }),
         onViewportChange: () => this.#onViewportChange(),
         onNodeDragStart: (id) => this.#grab(id),
         onNodeDrag: (id, x, y) => this.#drag(id, x, y),
         onNodeDragEnd: (id) => this.#release(id),
       },
-      rendererOptions,
+      { ...renderer, colors: this.#rendererColors() },
     );
     this.#resizeObserver = new ResizeObserver(() => {
       if (this.#pendingFit && container.clientWidth) this.fit();
@@ -122,24 +197,70 @@ export class GraphView {
   }
 
   /**
-   * Change any options. Looks apply at once, node sizes (nodeSizeScale, rootSizeScale) and label wrapping included;
-   * layout and physics options (direction, layered, physicsMode, the forces) apply from the next render(), as does
-   * the room the layout leaves for the new sizes and labels.
+   * Change any options (checked: see options.js). Looks apply at once, node sizes (nodeSizeScale, rootSizeScale)
+   * and label wrapping included; layout and physics options (layout, direction, layered, physicsMode, the forces)
+   * apply from the next render(), as does the room the layout leaves for the new sizes and labels.
+   * @param {Partial<import('./options.js').Options>} patch
    */
   setOptions(patch) {
-    Object.assign(this.#options, patch);
+    const next = resolveOptions(patch, {
+      base: this.#options,
+      strict: this.#strict,
+    });
+    const changed = Object.keys(next).filter(
+      (key) => next[key] !== this.#options[key],
+    );
+    if (!changed.length) return;
+    // In place: Tether's LivePhysics reads this same object on every grab.
+    Object.assign(this.#options, next);
     this.#applyOptions();
     this.#restyle();
     this.#showPinnedLineage({ force: true });
     this.syncBackground();
+    this.emit("optionsChange", { changed });
   }
 
-  /** Change any theme colours (see style.js DEFAULT_THEME). */
+  /** Put options back to their defaults: these keys, or all of them. */
+  resetOptions(keys) {
+    const defaults = resolveOptions({});
+    this.setOptions(
+      Object.fromEntries(
+        (keys ?? Object.keys(defaults)).map((key) => [key, defaults[key]]),
+      ),
+    );
+  }
+
+  /** The theme in effect (a copy). */
+  get theme() {
+    return { ...this.#theme };
+  }
+
+  /**
+   * Change any theme colours (checked: see style.js THEME_SCHEMA).
+   * @param {Partial<import('./style.js').Theme>} patch
+   */
   setTheme(patch) {
-    Object.assign(this.#theme, patch);
+    const next = resolveTheme(patch, {
+      base: this.#theme,
+      strict: this.#strict,
+    });
+    const changed = Object.keys(next).filter(
+      (key) => next[key] !== this.#theme[key],
+    );
+    if (!changed.length) return;
+    this.#theme = next;
+    this.graph.setColors(this.#rendererColors());
     this.#restyle();
     this.#syncEmphasis();
     this.#showPinnedLineage({ force: true });
+    this.emit("themeChange", { changed });
+  }
+
+  /** The theme colours the renderer draws with itself. */
+  #rendererColors() {
+    return Object.fromEntries(
+      RENDERER_COLOR_KEYS.map((key) => [key, this.#theme[key]]),
+    );
   }
 
   get rootNodeId() {
@@ -149,9 +270,9 @@ export class GraphView {
   }
 
   /**
-   * Looks for the caller's own classes (see style.js):
-   * { nodes: { className: { pattern, border, borderWidth, fillAlpha, aura, ring, badge, labelPriority, events } },
-   *   edges: { className: { color, width, glow, pattern } } }
+   * Looks for the caller's own classes (see style.js): any NodeStyle or EdgeStyle field, per class, applied in order.
+   * { nodes: { className: { ring: "#ffd166", size: 60, shape: "hexagon", … } }, edges: { className: { … } } }
+   * @param {import('./style.js').ClassRules} rules
    */
   setClassStyles(rules) {
     this.#classStyles = rules ?? {};
@@ -170,6 +291,7 @@ export class GraphView {
    *   grow: a new graph (nothing morphs from the previous one; it grows out of its root)
    */
   render({ nodes, edges, fit = false, anchorNodeId = null, grow = false }) {
+    const started = performance.now();
     const o = this.#options;
     const graph = this.graph;
     this.#clearTimers();
@@ -243,11 +365,12 @@ export class GraphView {
       o.physicsMode === "floating" &&
       this.#physics.tuning.floatIn &&
       o.animationsEnabled &&
-      nodes.length <= MAX_ANIMATED_NODES;
+      nodes.length <= o.maxAnimatedNodes;
     this.#physics.simulation = runLayout(layoutGraph, o, {
       tuning: this.#physics.tuning,
       settle: !floatIn,
     });
+    const layoutMs = performance.now() - started;
 
     const finalPositions = new Map();
     const placed = layoutGraph.ids.map((id, i) => {
@@ -258,11 +381,11 @@ export class GraphView {
     });
     const animate =
       o.animationsEnabled &&
-      placed.length <= MAX_ANIMATED_NODES &&
+      placed.length <= o.maxAnimatedNodes &&
       graph.width > 0;
     const duration = o.animationDuration;
     const stagger =
-      grow && o.growNewGraphs && placed.length <= MAX_STAGGERED_NODES;
+      grow && o.growNewGraphs && placed.length <= o.maxStaggeredNodes;
     const depths = stagger ? this.#depthsFrom(rootId) : null;
     const delays = new Map();
     const spawnFrom = new Map();
@@ -272,7 +395,10 @@ export class GraphView {
       if (stagger)
         delays.set(
           id,
-          Math.min((depths.get(id) ?? 0) * duration * 0.18, duration * 1.4),
+          Math.min(
+            (depths.get(id) ?? 0) * duration * o.growStagger,
+            duration * o.growMaxDelay,
+          ),
         );
     }
     graph.setGraph(
@@ -309,6 +435,11 @@ export class GraphView {
     if (this.#pinnedNodeId && !this.#nodes.has(this.#pinnedNodeId))
       this.#pinnedNodeId = null;
     this.#showPinnedLineage();
+    this.emit("render", {
+      nodeCount: this.#nodes.size,
+      edgeCount: this.#edges.size,
+      layoutMs,
+    });
   }
 
   /** Links from the root to each node, following edges (for growing a new graph level by level). */
@@ -329,7 +460,11 @@ export class GraphView {
 
   // ---------------------------------------------------------------- physics (Tether)
 
-  /** Tether's constants (tether/tuning.js) for this view. Applies to what's running too. */
+  /**
+   * Tether's constants (TUNING_SCHEMA) for this view, checked; everything not given goes back to its default.
+   * Applies to what's running too; layout constants apply from the next render().
+   * @param {Partial<import('tether/index.js').Tuning>} tuning
+   */
   setPhysicsTuning(tuning) {
     this.#physics.tuning = tuning;
   }
@@ -393,10 +528,14 @@ export class GraphView {
 
   #positionOf = (id) => this.graph.livePositionOf(id);
 
-  /** @param {{ fromLayout?: boolean }} [options]  fromLayout: the other nodes start from the layout, not the screen */
+  /**
+   * @param {string} id
+   * @param {{ fromLayout?: boolean }} [how]  fromLayout: the other nodes start from the layout, not the screen
+   */
   #grab(id, { fromLayout = false } = {}) {
     this.#heldId = id;
     this.#stopPhysics();
+    if (!fromLayout) this.emit("dragStart", { id });
     this.#physics.grab(id, {
       ids: this.graph.nodeIds(),
       links: [...this.#edges.values()],
@@ -413,12 +552,15 @@ export class GraphView {
   #drag(id, x, y) {
     this.#physics.drag(id, { x, y });
     this.#drive();
+    if (this.hasListeners("drag")) this.emit("drag", { id, x, y });
   }
 
   #release(id) {
-    if (this.#heldId === id) this.#heldId = null;
+    const wasHeld = this.#heldId === id;
+    if (wasHeld) this.#heldId = null;
     this.#physics.release(id);
     this.#drive();
+    if (wasHeld) this.emit("dragEnd", { id });
   }
 
   /**
@@ -460,13 +602,16 @@ export class GraphView {
     this.graph.setLabelFocus(null);
   }
 
-  /** Stop everything and remove the canvases. */
+  /** Stop everything and remove the canvases. Listeners hear "destroy", then are all removed. */
   destroy() {
     this.#clearTimers();
     this.#stopPhysics();
+    this.#physics.removeAllListeners();
     cancelAnimationFrame(this.#viewportFrame);
     this.#resizeObserver.disconnect();
     this.graph.destroy();
+    this.emit("destroy", {});
+    this.removeAllListeners();
   }
 
   /**
@@ -509,7 +654,7 @@ export class GraphView {
   #applyOptions() {
     const o = this.#options;
     this.graph.camera.minZoom = o.minZoom;
-    this.graph.camera.maxZoom = o.maxZoom;
+    this.graph.camera.maxZoom = Math.max(o.minZoom, o.maxZoom);
     this.graph.setOptions({
       motion: {
         enabled: o.animationsEnabled,
@@ -518,13 +663,25 @@ export class GraphView {
       },
       dimAlpha: o.dimOpacity,
       flowSpeed: o.flowSpeed,
-      smoothZoom: o.smoothZoom,
-      zoomSpeed: o.zoomSpeed,
+      input: {
+        smoothZoom: o.smoothZoom,
+        zoomSpeed: o.zoomSpeed,
+        draggable: o.nodesDraggable,
+        doubleTapMs: o.doubleTapMs,
+        longPressMs: o.longPressMs,
+        dragThreshold: {
+          mouse: o.dragThresholdMouse,
+          pen: o.dragThresholdPen,
+          touch: o.dragThresholdTouch,
+        },
+        panInertia: o.panInertia,
+        flickMinSpeed: o.flickMinSpeed,
+      },
       labels: {
         position: resolveLabelPosition(o),
         backdrop: o.labelBackdrop,
         fadeZoom: o.labelFadeZoom,
-        maxWidth: STYLE_BASE.labelWidth * o.labelWrapScale,
+        maxWidth: o.labelWidth * o.labelWrapScale,
         overflow: o.labelOverflow,
       },
     });
@@ -549,7 +706,7 @@ export class GraphView {
     if (!style.label) return { fullW: size, fullH: size };
     const o = this.#options;
     const font = labelFont(style.fontSize, style.bold);
-    const wrapWidth = STYLE_BASE.labelWidth * o.labelWrapScale;
+    const wrapWidth = o.labelWidth * o.labelWrapScale;
     const key = `${font}|${wrapWidth}|${o.labelOverflow}|${style.label}`;
     let label = this.#labelSizes.get(key);
     if (!label) {
@@ -622,10 +779,17 @@ export class GraphView {
   /** Select a node; null (or an id that isn't in the graph) for none. */
   select(nodeId) {
     if (!this.hasNode(nodeId)) nodeId = null;
+    const changed = nodeId !== this.#pinnedNodeId;
     this.graph.select(nodeId);
     this.#pinnedNodeId = nodeId;
     if (!this.#lineage.nodeId || this.#lineage.isPinned)
       this.#showPinnedLineage();
+    if (changed) this.emit("select", { id: nodeId });
+  }
+
+  /** The selected node, or null. */
+  get selectedId() {
+    return this.#pinnedNodeId;
   }
 
   hasNode(nodeId) {
@@ -683,7 +847,7 @@ export class GraphView {
     clearTimeout(this.#hoverTimer);
     this.#hoverTimer = setTimeout(
       () => this.#applyLineage(nodeId),
-      HOVER_DELAY_MS,
+      this.#options.hoverDelay,
     );
   }
 
@@ -787,6 +951,7 @@ export class GraphView {
     this.graph.fitView({
       animate: this.#options.animationsEnabled,
       maxZoom: this.#options.maxFitZoom,
+      padding: this.#options.fitPadding,
     });
   }
 
@@ -809,7 +974,14 @@ export class GraphView {
   }
 
   /** Fit some nodes (and optionally their neighbours) into view. */
-  focusOn(nodeIds, { padding = 60, includeNeighbours = false } = {}) {
+  focusOn(
+    nodeIds,
+    {
+      padding = this.#options.focusPadding,
+      includeNeighbours = false,
+      maxZoom = this.#options.focusMaxZoom,
+    } = {},
+  ) {
     const ids = new Set([...nodeIds].filter((id) => this.#nodes.has(id)));
     if (!ids.size) return;
     if (includeNeighbours)
@@ -822,13 +994,50 @@ export class GraphView {
     this.graph.fitView({
       ids,
       padding,
-      maxZoom: 2,
+      maxZoom,
       animate: this.#options.animationsEnabled,
     });
   }
 
   resize() {
     this.graph.resize();
+  }
+
+  /** Where the camera is (or is heading, mid-animation): save it to restore the view later. */
+  getViewport() {
+    const { zoom, panX, panY } = this.graph.cameraTarget;
+    return { zoom, panX, panY };
+  }
+
+  /**
+   * Move the camera (any of zoom, panX, panY).
+   * @param {Partial<Viewport>} viewport
+   * @param {{ animate?: boolean }} [options]  default: when animations are on
+   */
+  setViewport(viewport, { animate = this.#options.animationsEnabled } = {}) {
+    this.graph.moveCamera({ ...this.getViewport(), ...viewport }, { animate });
+  }
+
+  /** Graph coordinates → CSS pixels in the container. */
+  toScreen(x, y) {
+    return this.graph.camera.toScreen(x, y);
+  }
+
+  /** CSS pixels in the container → graph coordinates. */
+  toGraph(x, y) {
+    return this.graph.camera.toWorld(x, y);
+  }
+
+  /** Where a node is drawn now (graph coordinates, mid-animation included), or null. */
+  positionOf(nodeId) {
+    return this.graph.livePositionOf(nodeId) ?? null;
+  }
+
+  /** Every node's position now: id → { x, y } (save them, or hand them to your own code). */
+  positions() {
+    return new Map(
+      this.graph.nodeIds().map((id) => [id, this.graph.livePositionOf(id)]),
+    );
   }
 
   /**
@@ -846,8 +1055,9 @@ export class GraphView {
       return;
     }
     const camera = this.graph.camera;
-    let cellSize = 26 * camera.zoom;
-    if (!(cellSize > 0) || !Number.isFinite(cellSize)) cellSize = 26;
+    const base = this.#options.backgroundCellSize;
+    let cellSize = base * camera.zoom;
+    if (!(cellSize > 0) || !Number.isFinite(cellSize)) cellSize = base;
     while (cellSize < 12) cellSize *= 2;
     while (cellSize > 90) cellSize /= 2;
     wrapper.style.backgroundSize = `${cellSize}px ${cellSize}px`;
@@ -860,7 +1070,8 @@ export class GraphView {
         this.#viewportFrame = 0;
         this.syncBackground();
       });
-    this.#handlers.onViewportChange?.();
+    if (this.hasListeners("viewportChange"))
+      this.emit("viewportChange", { viewport: this.getViewport() });
   }
 
   #viewportFrame = 0;
@@ -883,11 +1094,19 @@ export class GraphView {
     }
     if (!fit) return null;
     const o = this.#options;
-    let view = graph.viewFor(undefined, { maxZoom: o.maxFitZoom });
+    let view = graph.viewFor(undefined, {
+      maxZoom: o.maxFitZoom,
+      padding: o.fitPadding,
+    });
     const rootId = this.rootNodeId;
-    if (fit === "smart" && view.zoom < 0.3 && this.#nodes.size > 80 && rootId) {
+    if (
+      fit === "smart" &&
+      view.zoom < o.smartFitMinZoom &&
+      this.#nodes.size > o.smartFitMinNodes &&
+      rootId
+    ) {
       // Too big to read when fitted: open on the root, near the edge the tree grows away from.
-      const zoom = 0.6;
+      const zoom = o.smartFitZoom;
       const root = graph.positionOf(rootId);
       const growth = isDirectionalLayout(o) ? treeDirection(o.direction) : null;
       const fractionX = growth === "LR" ? 0.12 : growth === "RL" ? 0.88 : 0.5;
