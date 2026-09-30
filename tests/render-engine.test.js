@@ -568,3 +568,52 @@ test("instance data: moving a few records rewrites them in place, matching a ful
   const gone = node("gone", 0, 0);
   assert.equal(incremental.update(new Set([gone]), scene), true);
 });
+
+test("lineage emphasis: a colour tints the edge; without one (lineageColor: edge) it keeps its own, only wider", () => {
+  const value = (v) => ({ value: v });
+  const node = (id, x) => ({
+    id,
+    px: value(x),
+    py: value(0),
+    alpha: value(1),
+    scale: value(1),
+    glow: value(0),
+    hw: 20,
+    hh: 20,
+    fill: [0, 0, 0, 1],
+    border: [1, 1, 1, 1],
+    aura: [0, 0, 0, 0],
+    ring: [0, 0, 0, 0],
+    glowColor: [1, 1, 1],
+    style: {},
+  });
+  const drawn = (state) => {
+    const edge = {
+      id: "e",
+      source: node("a", 0),
+      target: node("b", 200),
+      alpha: value(1),
+      emphasis: value(1),
+      emphasisState: state,
+      color: [0, 1, 0],
+      style: { width: 2 },
+    };
+    const data = new InstanceData();
+    data.rebuild({
+      ghosts: [],
+      nodes: [edge.source, edge.target],
+      edges: [edge],
+      top: [],
+      layout: { routing: "straight" },
+      iconUv: () => null,
+    });
+    const d = data.edges.data;
+    return { color: [...d.subarray(4, 7)], width: d[8] };
+  };
+  const themed = drawn({ color: "#ff0000", boost: 1.4 });
+  assert.deepEqual(themed.color, [1, 0, 0]);
+  const own = drawn({ color: null, boost: 1.4 });
+  assert.deepEqual(own.color, [0, 1, 0]);
+  assert.equal(own.width, themed.width);
+  assert.ok(own.width > 2);
+});

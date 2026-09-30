@@ -295,11 +295,14 @@ export class InstanceData {
     }
     let width = style.width;
     // Edges with a standing glow (a best route) keep their colour when a lineage lights them; they still flow.
+    // An emphasis without a colour keeps the edge's own, and only widens it.
     if (emphasis > 0 && state && !style.glow) {
-      const [er, eg, eb] = cachedColor(state.color);
-      r += (er - r) * emphasis;
-      g += (eg - g) * emphasis;
-      b += (eb - b) * emphasis;
+      if (state.color) {
+        const [er, eg, eb] = cachedColor(state.color);
+        r += (er - r) * emphasis;
+        g += (eg - g) * emphasis;
+        b += (eb - b) * emphasis;
+      }
       width += (state.boost ?? 1) * emphasis;
     }
     const flow = emphasis > 0.5 && state?.flow ? state.flow : 0;

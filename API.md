@@ -163,6 +163,7 @@ The layout and physics options are Tether's settings: `layout`, `direction`, `la
 | --- | --- | --- | --- |
 | `hoverMode` | `"both"` | `both`, `ancestors`, `descendants`, `none` | What hovering a node lights up. |
 | `hoverDelay` | `35` | 0 – 2000 | Milliseconds before hover lineage shows, so sweeping across the graph doesn't flicker. |
+| `lineageColor` | `"theme"` | `theme`, `edge` | "theme": lit lineage edges take the theme's ancestors and descendants colours. "edge": they keep their own colour (class rules, edgeColorMode) and are only widened and flowing. |
 | `pinSelectionLineage` | `true` | true / false | Keep the selected node's lineage lit after the pointer leaves it. |
 | `animateFlow` | `true` | true / false | Light pulses travel along lit edges. |
 | `flowToward` | `"target"` | `target`, `source` | Which way the pulses travel. |

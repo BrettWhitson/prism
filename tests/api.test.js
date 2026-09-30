@@ -390,3 +390,8 @@ test("a shape that didn't compile is left out of later shaders and the shape lis
   registerNodeShape("test-broken", { glsl: "return length(p) - h.x;" });
   assert.ok(nodeShapeNames().includes("test-broken"));
 });
+
+test("lineageColor defaults to the theme's colours (unchanged behaviour)", () => {
+  assert.equal(resolveOptions({}).lineageColor, "theme");
+  assert.equal(resolveOptions({ lineageColor: "edge" }).lineageColor, "edge");
+});

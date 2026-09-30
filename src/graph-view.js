@@ -965,10 +965,20 @@ export class GraphView extends Emitter {
       mode === "descendants" ? none() : this.#reach(nodeId, false);
     const flow = o.animateFlow ? (o.flowToward === "target" ? 1 : -1) : 0;
     const emphasis = new Map();
+    // lineageColor "edge": lit edges keep their own colour (only wider, and flowing); "theme": the lineage colours.
+    const tint = (color) => (o.lineageColor === "edge" ? null : color);
     for (const id of descendants.edges)
-      emphasis.set(id, { color: this.#theme.descendants, boost: 0.8, flow });
+      emphasis.set(id, {
+        color: tint(this.#theme.descendants),
+        boost: 0.8,
+        flow,
+      });
     for (const id of ancestors.edges)
-      emphasis.set(id, { color: this.#theme.ancestors, boost: 1.4, flow });
+      emphasis.set(id, {
+        color: tint(this.#theme.ancestors),
+        boost: 1.4,
+        flow,
+      });
     let dimmed = null;
     if (!isPinned) {
       dimmed = new Set();

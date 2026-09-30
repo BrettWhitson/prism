@@ -47,6 +47,7 @@ export type Options = import("tether/index.js").LayoutSettings & {
   edgeLabels: boolean;
   hoverMode: "both" | "ancestors" | "descendants" | "none";
   hoverDelay: number;
+  lineageColor: "theme" | "edge";
   pinSelectionLineage: boolean;
   animateFlow: boolean;
   flowToward: "target" | "source";
@@ -108,7 +109,7 @@ export type Options = import("tether/index.js").LayoutSettings & {
  *   edgeLineStyle: "solid" | "dashed" | "dotted", edgeColorMode: "neutral" | "source" | "target",
  *   showArrows: boolean, arrowShape: string, arrowEnd: "target" | "source" | "both", arrowScale: number,
  *   edgeLabels: boolean,
- *   hoverMode: "both" | "ancestors" | "descendants" | "none", hoverDelay: number, pinSelectionLineage: boolean,
+ *   hoverMode: "both" | "ancestors" | "descendants" | "none", hoverDelay: number, lineageColor: "theme" | "edge", pinSelectionLineage: boolean,
  *   animateFlow: boolean, flowToward: "target" | "source", flowSpeed: number, dimOpacity: number,
  *   nodesDraggable: boolean, smoothZoom: boolean, zoomSpeed: number, minZoom: number, maxZoom: number,
  *   maxFitZoom: number, fitPadding: number, focusPadding: number, focusMaxZoom: number, smartFitMinZoom: number,

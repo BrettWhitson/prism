@@ -448,6 +448,13 @@ export const OPTIONS_SCHEMA = Object.freeze({
     5,
     "Milliseconds before hover lineage shows, so sweeping across the graph doesn't flicker.",
   ),
+  lineageColor: choice(
+    "Interaction",
+    "Lineage colour",
+    "theme",
+    ["theme", "edge"],
+    '"theme": lit lineage edges take the theme\'s ancestors and descendants colours. "edge": they keep their own colour (class rules, edgeColorMode) and are only widened and flowing.',
+  ),
   pinSelectionLineage: boolean(
     "Interaction",
     "Pin selection",
@@ -767,7 +774,7 @@ export const OPTIONS_SCHEMA = Object.freeze({
  *   edgeLineStyle: "solid" | "dashed" | "dotted", edgeColorMode: "neutral" | "source" | "target",
  *   showArrows: boolean, arrowShape: string, arrowEnd: "target" | "source" | "both", arrowScale: number,
  *   edgeLabels: boolean,
- *   hoverMode: "both" | "ancestors" | "descendants" | "none", hoverDelay: number, pinSelectionLineage: boolean,
+ *   hoverMode: "both" | "ancestors" | "descendants" | "none", hoverDelay: number, lineageColor: "theme" | "edge", pinSelectionLineage: boolean,
  *   animateFlow: boolean, flowToward: "target" | "source", flowSpeed: number, dimOpacity: number,
  *   nodesDraggable: boolean, smoothZoom: boolean, zoomSpeed: number, minZoom: number, maxZoom: number,
  *   maxFitZoom: number, fitPadding: number, focusPadding: number, focusMaxZoom: number, smartFitMinZoom: number,
